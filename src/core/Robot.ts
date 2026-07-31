@@ -288,53 +288,25 @@ export class Robot {
 
     if (price <= stopLossTriggerPrice) {
       this.activeRiskPrompts.add(symbol);
-      this.log('warn', `STOP LOSS TRIGGERED: ${symbol} price $${price.toFixed(2)} hit trigger $${stopLossTriggerPrice.toFixed(2)} (-${assetRisk.positionStopLossPct}%).`, symbol);
+      this.log('warn', `STOP LOSS TRIGGERED: ${symbol} price $${price.toFixed(2)} hit trigger $${stopLossTriggerPrice.toFixed(2)} (-${assetRisk.positionStopLossPct}%). Executing automatic emergency exit.`, symbol);
 
-      if (assetRisk.executionMode === 'advisor') {
-        if (this.onAdvisorPrompt) {
-          this.onAdvisorPrompt('SELL', symbol, activePosition.quantity, price, async () => {
-            try {
-              await this.executeOrder(symbol, 'SELL', activePosition.quantity, price);
-            } finally {
-              this.activeRiskPrompts.delete(symbol);
-            }
-          });
-          // Unlock in 10s if dismissed
-          setTimeout(() => { this.activeRiskPrompts.delete(symbol); }, 10000);
-        } else {
-          this.activeRiskPrompts.delete(symbol);
-        }
-      } else {
-        try {
-          await this.executeOrder(symbol, 'SELL', activePosition.quantity, price);
-        } finally {
-          this.activeRiskPrompts.delete(symbol);
-        }
+      try {
+        await this.executeOrder(symbol, 'SELL', activePosition.quantity, price);
+      } catch (e: any) {
+        this.log('error', `Stop loss exit failed for ${symbol}: ${e.message}`, symbol);
+      } finally {
+        this.activeRiskPrompts.delete(symbol);
       }
     } else if (price >= takeProfitTriggerPrice) {
       this.activeRiskPrompts.add(symbol);
-      this.log('buy', `TAKE PROFIT TRIGGERED: ${symbol} price $${price.toFixed(2)} hit trigger $${takeProfitTriggerPrice.toFixed(2)} (+${assetRisk.positionTakeProfitPct}%).`, symbol);
+      this.log('sell', `TAKE PROFIT TRIGGERED: ${symbol} price $${price.toFixed(2)} hit trigger $${takeProfitTriggerPrice.toFixed(2)} (+${assetRisk.positionTakeProfitPct}%). Executing automatic exit.`, symbol);
 
-      if (assetRisk.executionMode === 'advisor') {
-        if (this.onAdvisorPrompt) {
-          this.onAdvisorPrompt('SELL', symbol, activePosition.quantity, price, async () => {
-            try {
-              await this.executeOrder(symbol, 'SELL', activePosition.quantity, price);
-            } finally {
-              this.activeRiskPrompts.delete(symbol);
-            }
-          });
-          // Unlock in 10s if dismissed
-          setTimeout(() => { this.activeRiskPrompts.delete(symbol); }, 10000);
-        } else {
-          this.activeRiskPrompts.delete(symbol);
-        }
-      } else {
-        try {
-          await this.executeOrder(symbol, 'SELL', activePosition.quantity, price);
-        } finally {
-          this.activeRiskPrompts.delete(symbol);
-        }
+      try {
+        await this.executeOrder(symbol, 'SELL', activePosition.quantity, price);
+      } catch (e: any) {
+        this.log('error', `Take profit exit failed for ${symbol}: ${e.message}`, symbol);
+      } finally {
+        this.activeRiskPrompts.delete(symbol);
       }
     }
   }
@@ -543,5 +515,10 @@ export class Robot {
       console.warn(`[Robot] Python ML Predictor failed: ${e.message}. Defaulting to HOLD.`);
       return 'HOLD';
     }
+  }
+
+  // Expose news scanning capability to external calibrators safely
+  async getNews(symbol: string): Promise<string[]> {
+    return this.broker.getNews(symbol);
   }
 }

@@ -6,6 +6,7 @@ export interface IBroker {
   getPositions(): Promise<Position[]>;
   placeOrder(symbol: string, side: 'BUY' | 'SELL', qty: number, price: number): Promise<Trade>;
   liquidateAll(): Promise<void>;
+  getNews(symbol: string): Promise<string[]>;
 }
 
 // Local simulation broker
@@ -128,6 +129,35 @@ export class LocalBroker implements IBroker {
       await this.placeOrder(pos.asset, 'SELL', pos.quantity, pos.currentPrice);
     }
   }
+
+  async getNews(symbol: string): Promise<string[]> {
+    if (symbol.includes('BTC') || symbol.includes('ETH')) {
+      return [
+        `Institutional buyers step in to push BTC prices higher`,
+        `Regulatory warnings cause minor correction in crypto indexes`,
+        `Bitcoin transaction activity surges as blockchain adopts fresh scaling scripts`,
+        `Ethereum developer updates outline significant drop in gas costs`
+      ];
+    }
+    if (symbol === 'AAPL') {
+      return [
+        `Apple announces major upgrades to Siri with new generative AI capabilities`,
+        `Analysts upgrade Apple stock to buy ahead of anticipated phone launch`,
+        `Supply chain report hints at massive production increase for next gen Apple devices`
+      ];
+    }
+    if (symbol === 'TSLA') {
+      return [
+        `Tesla records surge in global EV sales as new gigafactory output increases`,
+        `Concerns mount over autonomy software deadlines, analysts trim TSLA price targets`,
+        `Tesla board approves stock buyback program, stock climbs 4%`
+      ];
+    }
+    return [
+      `${symbol} reports better than expected quarterly profits, stock surges`,
+      `Concerns mount over product delays, analysts trim target price for ${symbol}`
+    ];
+  }
 }
 
 // Alpaca Live/Paper API broker implementation (uses Vite development proxies)
@@ -197,8 +227,14 @@ export class AlpacaBroker implements IBroker {
       const curPrice = parseFloat(pos.current_price);
       const pnl = parseFloat(pos.unrealized_pl);
       const pnlPct = parseFloat(pos.unrealized_plpc) * 100;
+      
+      // Convert Alpaca asset names back to watchlist standard with slash
+      let assetName = pos.symbol;
+      if (assetName === 'BTCUSD') assetName = 'BTC/USD';
+      if (assetName === 'ETHUSD') assetName = 'ETH/USD';
+
       return {
-        asset: pos.symbol,
+        asset: assetName,
         quantity: qty,
         averagePrice: avgPrice,
         currentPrice: curPrice,
@@ -209,9 +245,10 @@ export class AlpacaBroker implements IBroker {
   }
 
   async placeOrder(symbol: string, side: 'BUY' | 'SELL', qty: number, price: number): Promise<Trade> {
-    // Alpaca POST /v2/orders
+    // Alpaca POST /v2/orders - remove slash from crypto assets for Alpaca API compatibility
+    const normalizedSymbol = symbol.replace('/', '');
     const body = {
-      symbol,
+      symbol: normalizedSymbol,
       qty: qty.toString(),
       side: side.toLowerCase(),
       type: 'market',
@@ -257,6 +294,26 @@ export class AlpacaBroker implements IBroker {
     if (!res.ok) {
       const errText = await res.text();
       throw new Error(`Alpaca Liquidation Failed: ${res.statusText} (${errText})`);
+    }
+  }
+
+  async getNews(symbol: string): Promise<string[]> {
+    try {
+      // Remove slash for Alpaca data compatibility
+      const normalizedSymbol = symbol.replace('/', '');
+      const res = await fetch(`/api/alpaca-data/v1beta1/news?symbols=${normalizedSymbol}&limit=10`, {
+        method: 'GET',
+        headers: this.getHeaders()
+      });
+      if (!res.ok) {
+        throw new Error(`Alpaca News API status: ${res.status}`);
+      }
+      const data = await res.json();
+      const articles = data.news || [];
+      return articles.map((art: any) => art.headline);
+    } catch (e: any) {
+      console.warn(`[AlpacaBroker] Failed to fetch news for ${symbol}: ${e.message}`);
+      return [];
     }
   }
 }

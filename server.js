@@ -52,6 +52,11 @@ app.all('/api/alpaca-live/*', (req, res) => {
   proxyAlpaca(req, res, `https://api.alpaca.markets${cleanPath}`);
 });
 
+app.all('/api/alpaca-data/*', (req, res) => {
+  const cleanPath = req.url.replace(/^\/api\/alpaca-data/, '');
+  proxyAlpaca(req, res, `https://data.alpaca.markets${cleanPath}`);
+});
+
 // Serve frontend assets built in dist
 app.use(express.static(path.join(__dirname, 'dist')));
 

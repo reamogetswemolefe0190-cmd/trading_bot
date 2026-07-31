@@ -15,6 +15,23 @@ export class SonOfAlton {
   private auditCount: number = 0;
   private optimizedActionsCount: number = 0;
 
+  // Sentiment tracker states
+  private sentimentScores: Map<string, number> = new Map();
+  private headlinesMap: Map<string, string[]> = new Map();
+  private baselineMaxPosSizes: Map<string, number> = new Map();
+
+  private positiveKeywords = [
+    'bullish', 'upgrade', 'growth', 'beat', 'surge', 'breakout', 
+    'gain', 'success', 'partnership', 'record high', 'climb', 
+    'rebound', 'advances', 'positive', 'strong', 'gains'
+  ];
+
+  private negativeKeywords = [
+    'bearish', 'downgrade', 'drop', 'fall', 'crash', 'plunge', 
+    'warning', 'lawsuit', 'missed', 'regulatory', 'delays', 
+    'trim', 'concerns', 'correction', 'negative', 'weak', 'losses'
+  ];
+
   // Listeners to push data to UI
   private onLogCallback: ((entry: LogEntry) => void) | null = null;
   private onReportCallback: ((reports: SonOfAltonReport[]) => void) | null = null;
@@ -64,6 +81,13 @@ export class SonOfAlton {
     return this.reports;
   }
 
+  getSentimentData() {
+    return {
+      scores: Array.from(this.sentimentScores.entries()),
+      headlines: Array.from(this.headlinesMap.entries())
+    };
+  }
+
   private log(level: LogEntry['level'], message: string, symbol?: string) {
     const entry: LogEntry = {
       timestamp: Date.now(),
@@ -80,6 +104,28 @@ export class SonOfAlton {
     }
   }
 
+  private calculateSentiment(headlines: string[]): number {
+    if (headlines.length === 0) return 0;
+    
+    let posCount = 0;
+    let negCount = 0;
+    
+    headlines.forEach(hl => {
+      const lower = hl.toLowerCase();
+      this.positiveKeywords.forEach(w => {
+        if (lower.includes(w)) posCount++;
+      });
+      this.negativeKeywords.forEach(w => {
+        if (lower.includes(w)) negCount++;
+      });
+    });
+    
+    const total = posCount + negCount;
+    if (total === 0) return 0.0;
+    
+    return parseFloat(((posCount - negCount) / total).toFixed(2));
+  }
+
   // Audits active bot parameters and updates configurations if a more profitable profile is resolved
   private async runOptimizationSweep() {
     if (!this.isEnabled) return;
@@ -94,8 +140,63 @@ export class SonOfAlton {
       const currentConfig = this.robot.getStrategyConfig(symbol);
       const candles = this.simulator.getCandles(symbol);
 
+      // --- Part 1: News Sentiment Fetching & Capital Allocation ---
+      try {
+        const headlines = await this.robot.getNews(symbol);
+        const score = this.calculateSentiment(headlines);
+        
+        this.sentimentScores.set(symbol, score);
+        this.headlinesMap.set(symbol, headlines.slice(0, 3)); // Store top 3 headlines
+
+        const currentRisk = this.robot.getRiskConfig(symbol);
+        
+        // Record baseline size if not tracked yet
+        if (!this.baselineMaxPosSizes.has(symbol)) {
+          this.baselineMaxPosSizes.set(symbol, currentRisk.maxPositionSize);
+        }
+        
+        const baseline = this.baselineMaxPosSizes.get(symbol)!;
+        let originalSize = currentRisk.maxPositionSize;
+
+        if (score > 0.25) {
+          // Bullish: Boost allocation by 1.5x, tighten Stop Loss to 1.5%
+          currentRisk.maxPositionSize = baseline * 1.5;
+          currentRisk.positionStopLossPct = 1.5;
+          this.robot.setRiskConfig(symbol, currentRisk);
+          
+          if (originalSize !== currentRisk.maxPositionSize) {
+            this.log('ai', `Sentiment ranking: BULLISH (${score > 0 ? '+' : ''}${score}). Allocation boosted to $${currentRisk.maxPositionSize} for ${symbol}.`, symbol);
+          }
+        } else if (score < -0.25) {
+          // Bearish: Freeze buying allocation to $0 (protecting capital)
+          currentRisk.maxPositionSize = 0;
+          this.robot.setRiskConfig(symbol, currentRisk);
+          
+          if (originalSize !== 0) {
+            this.log('warn', `Sentiment ranking: BEARISH (${score}). BUY orders frozen ($0 allocation) for ${symbol} to protect capital.`, symbol);
+          }
+        } else {
+          // Neutral: Restore baseline size, default Stop Loss back to 2.0%
+          currentRisk.maxPositionSize = baseline;
+          currentRisk.positionStopLossPct = 2.0;
+          this.robot.setRiskConfig(symbol, currentRisk);
+          
+          if (originalSize !== baseline) {
+            this.log('info', `Sentiment ranking: NEUTRAL (${score > 0 ? '+' : ''}${score}). Restored baseline size $${baseline} for ${symbol}.`, symbol);
+          }
+        }
+      } catch (newsErr: any) {
+        console.warn(`[SonOfAlton] Sentiment update failed for ${symbol}:`, newsErr.message);
+      }
+
+      // --- Part 2: Technical Strategy Param Sweeps ---
       if (candles.length < 30) {
         this.log('warn', `Audit for ${symbol} skipped: Insufficient candles history (${candles.length}/30).`, symbol);
+        continue;
+      }
+
+      // Skip optimization sweeps for ML strategy since it runs on Python server
+      if (currentConfig.type === 'ml_predict') {
         continue;
       }
 
@@ -155,10 +256,20 @@ export class SonOfAlton {
         paramText = `Fast: ${params.smaFastPeriod}, Slow: ${params.smaSlowPeriod}`;
       } else if (config.type === 'rsi_mean_reversion') {
         paramText = `Period: ${params.rsiPeriod}, Thresholds: ${params.rsiOversold}/${params.rsiOverbought}`;
+      } else if (config.type === 'bollinger_bands') {
+        paramText = `Period: ${params.bbPeriod || 20}, Mult: ${params.bbMultiplier || 2.0}`;
+      } else if (config.type === 'ml_predict') {
+        paramText = `Python RF Classifier (Live)`;
       } else {
         paramText = `Fast: ${params.macdFastPeriod}, Slow: ${params.macdSlowPeriod}, Signal: ${params.macdSignalPeriod}`;
       }
       activeStrategiesList += `* **${asset.symbol}**: ${config.type.toUpperCase().replace('_', ' ')} (${paramText})\n`;
+    }
+
+    let sentimentRanks = '';
+    for (const [sym, score] of this.sentimentScores.entries()) {
+      const status = score > 0.25 ? '⚡ BULLISH (Max Allocation)' : score < -0.25 ? '⚠️ BEARISH (Buy Halted)' : '⚖️ NEUTRAL';
+      sentimentRanks += `* **${sym}**: Score: **${score > 0 ? '+' : ''}${score}** (${status})\n`;
     }
 
     const actionSummary = actions.length > 0 
@@ -177,10 +288,13 @@ export class SonOfAlton {
 #### 2. Active Strategy Mappings
 ${activeStrategiesList}
 
-#### 3. AI Decisions & Reprogramming Log
+#### 3. News Sentiment Rankings
+${sentimentRanks || '*Waiting for news data scans...*'}
+
+#### 4. AI Decisions & Reprogramming Log
 ${actionSummary}
 
-#### 4. Safety Audit & Net-Exposure
+#### 5. Safety Audit & Net-Exposure
 * **Stop-Loss / Take-Profit Boundaries**: **ENFORCED (Non-Negotiable)**
 * **Halt Trigger**: Set to halt all trades if Daily NAV drops by more than **5.0%**.
 `;

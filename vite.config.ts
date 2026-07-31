@@ -20,6 +20,14 @@ export default defineConfig({
         headers: {
           'Origin': 'https://api.alpaca.markets'
         }
+      },
+      '/api/alpaca-data': {
+        target: 'https://data.alpaca.markets',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/alpaca-data/, ''),
+        headers: {
+          'Origin': 'https://data.alpaca.markets'
+        }
       }
     }
   },

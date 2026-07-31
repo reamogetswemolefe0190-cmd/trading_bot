@@ -201,6 +201,8 @@ async function bootstrap() {
   alton = new SonOfAlton(robot, simulator);
   alton.onReport((reports) => {
     dashboard.renderAltonReports(reports);
+    const sentiment = alton.getSentimentData();
+    dashboard.updateAltonSentiment(sentiment.scores, sentiment.headlines);
   });
   dashboard.bindAltonToggle((enabled) => {
     if (enabled) {

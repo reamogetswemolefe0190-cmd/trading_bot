@@ -307,7 +307,7 @@ export class Dashboard {
 
               <!-- Son of Alton AI Optimizer Pane -->
               <div id="pane-alton" class="tab-pane" role="tabpanel">
-                <div class="performance-view" style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; height: 100%;">
+                <div class="performance-view" style="display: grid; grid-template-columns: 1.1fr 1fr 1.2fr; gap: 16px; height: 100%;">
                   
                   <!-- Left side: Log & Toggle -->
                   <div style="display: flex; flex-direction: column; gap: 12px; height: 100%;">
@@ -329,6 +329,14 @@ export class Dashboard {
                     </div>
                   </div>
                   
+                  <!-- Middle side: News Sentiment Ticker -->
+                  <div style="display: flex; flex-direction: column; gap: 8px; height: 100%; overflow: hidden;">
+                    <span class="stat-label" style="font-size:0.75rem;">Market News & Sentiment Scans</span>
+                    <div id="alton-sentiment-viewer" class="log-viewer" style="flex-grow: 1; overflow-y: auto; background: rgba(0, 0, 0, 0.2); padding: 12px; display: flex; flex-direction: column; gap: 10px;">
+                      <em style="color: var(--text-muted); font-size: 0.8rem;">Waiting for sentiment audit scans to parse news feed...</em>
+                    </div>
+                  </div>
+
                   <!-- Right side: Reports Viewer -->
                   <div style="display: flex; flex-direction: column; gap: 8px; height: 100%; overflow: hidden;">
                     <span class="stat-label" style="font-size:0.75rem;">Latest Progress Report</span>
@@ -1053,6 +1061,38 @@ export class Dashboard {
     // Replace linebreaks with paragraph breaks where appropriate
     html = html.split('\n').join('<br>');
     viewer.innerHTML = `<div style="display:flex; flex-direction:column; gap:4px;">${html}</div>`;
+  }
+
+  // Updates real-time news sentiment widget inside Son of Alton tab
+  updateAltonSentiment(scores: [string, number][], headlines: [string, string[]][]) {
+    const viewer = document.getElementById('alton-sentiment-viewer');
+    if (!viewer || scores.length === 0) return;
+
+    const headlinesMap = new Map(headlines);
+
+    viewer.innerHTML = scores.map(([symbol, score]) => {
+      const isBullish = score > 0.25;
+      const isBearish = score < -0.25;
+      const statusClass = isBullish ? 'positive' : isBearish ? 'negative' : 'neutral';
+      const statusText = isBullish ? 'BULLISH (1.5x Alloc)' : isBearish ? 'BEARISH (Buy Halted)' : 'NEUTRAL';
+      
+      const symbolHeadlines = headlinesMap.get(symbol) || [];
+      const latestHeadline = symbolHeadlines.length > 0 ? symbolHeadlines[0] : 'No recent articles found.';
+
+      return `
+        <div style="padding: 10px; background: rgba(255,255,255,0.02); border-radius: 6px; border: 1px solid var(--border-light); font-size: 0.8rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <strong style="color: var(--text-main); font-weight:700;">${symbol}</strong>
+            <span class="stat-change ${statusClass}" style="font-size: 0.7rem; font-weight: 700; padding: 2px 6px; border-radius: 4px;">
+              ${score > 0 ? '+' : ''}${score.toFixed(2)} | ${statusText}
+            </span>
+          </div>
+          <div style="color: var(--text-muted); font-size: 0.75rem; line-height: 1.3; font-style: italic;">
+            "${latestHeadline}"
+          </div>
+        </div>
+      `;
+    }).join('');
   }
 
   // Displays backtest output report inside the optimizer Recommendations tab
