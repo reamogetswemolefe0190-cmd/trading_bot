@@ -15,6 +15,7 @@ import { Simulator } from '../core/Simulator';
 
 export class Dashboard {
   private container: HTMLElement;
+  private activeSymbol: string = 'BTC/USD';
 
   // Event handlers to communicate with main.ts
   private onStartStopHandler: ((running: boolean) => void) | null = null;
@@ -185,6 +186,8 @@ export class Dashboard {
                 <option value="sma_crossover" ${cachedStrategy.type === 'sma_crossover' ? 'selected' : ''}>SMA Crossover (Trend)</option>
                 <option value="rsi_mean_reversion" ${cachedStrategy.type === 'rsi_mean_reversion' ? 'selected' : ''}>RSI Mean Reversion (Momentum)</option>
                 <option value="macd" ${cachedStrategy.type === 'macd' ? 'selected' : ''}>MACD Crossover (Trend)</option>
+                <option value="bollinger_bands" ${cachedStrategy.type === 'bollinger_bands' ? 'selected' : ''}>Bollinger Bands (Mean Reversion)</option>
+                <option value="ml_predict" ${cachedStrategy.type === 'ml_predict' ? 'selected' : ''}>Python ML Predictor (AI)</option>
               </select>
             </div>
 
@@ -643,6 +646,7 @@ export class Dashboard {
 
   // Swaps config panel values when chart swaps asset
   public setConfigs(strategy: StrategyConfig, risk: RiskConfig, symbol: string) {
+    this.activeSymbol = symbol;
     // Mode
     (document.getElementById('select-mode') as HTMLSelectElement).value = risk.executionMode;
     // Limits
@@ -756,6 +760,34 @@ export class Dashboard {
           </div>
         </div>
       `;
+    } else if (config.type === 'bollinger_bands') {
+      const period = config.parameters.bbPeriod || 20;
+      const mult = config.parameters.bbMultiplier || 2.0;
+      html = `
+        <div class="input-group">
+          <label>BB Period</label>
+          <div class="range-slider">
+            <input type="range" id="slider-bb-period" min="5" max="50" value="${period}">
+            <span class="slider-val" id="val-bb-period">${period}</span>
+          </div>
+        </div>
+        <div class="input-group">
+          <label>BB Standard Deviation Multiplier</label>
+          <div class="range-slider">
+            <input type="range" id="slider-bb-multiplier" min="1.0" max="4.0" step="0.1" value="${mult}">
+            <span class="slider-val" id="val-bb-multiplier">${mult}</span>
+          </div>
+        </div>
+      `;
+    } else if (config.type === 'ml_predict') {
+      html = `
+        <div class="input-group" style="padding: 12px; background: rgba(56, 189, 248, 0.05); border: 1px dashed var(--color-primary); border-radius: 8px;">
+          <strong style="color: var(--color-primary); font-size: 0.85rem; display: block; margin-bottom: 4px;">Python ML Strategy</strong>
+          <span style="font-size: 0.75rem; color: var(--text-muted); line-height: 1.4; display: block;">
+            Queries your Python server at <code>http://localhost:5000/predict</code> using a RandomForest ML classifier. Make sure your Python Flask app is running!
+          </span>
+        </div>
+      `;
     }
 
     container.innerHTML = html;
@@ -773,6 +805,50 @@ export class Dashboard {
         this.triggerConfigChange();
       });
     });
+
+    // Attach Train ML button click listener if it exists
+    const btnTrain = document.getElementById('btn-train-ml');
+    if (btnTrain) {
+      btnTrain.addEventListener('click', async () => {
+        btnTrain.setAttribute('disabled', 'true');
+        btnTrain.innerText = 'Training Model...';
+        
+        try {
+          const sym = this.activeSymbol;
+          // Path to data file: data/history/Symbol_history.json
+          // Note that symbol BTC/USD will have a file named BTC_USD_history.json
+          const cleanSym = sym.replace('/', '_');
+          const filepath = `data/history/${cleanSym}_history.json`;
+          
+          const res = await fetch('http://localhost:5000/train', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              symbol: sym,
+              filepath: filepath
+            })
+          });
+          
+          const data = await res.json();
+          if (!res.ok) {
+            throw new Error(data.error || `HTTP Error ${res.status}`);
+          }
+          
+          alert(`Success: Trained machine learning model for ${sym}!\nAccuracy: ${(data.training_accuracy * 100).toFixed(1)}%`);
+          btnTrain.innerText = 'Train ML Model (Success!)';
+        } catch (e: any) {
+          alert(`Training failed: ${e.message}\n\nMake sure you downloaded history first in your terminal:\nnode scripts/fetch_history.js ${this.activeSymbol} 365 <AlpacaKey> <AlpacaSecret>`);
+          btnTrain.innerText = 'Train ML Model (Failed)';
+        } finally {
+          btnTrain.removeAttribute('disabled');
+          setTimeout(() => {
+            if (btnTrain) btnTrain.innerText = 'Train ML Model';
+          }, 3000);
+        }
+      });
+    }
   }
 
   // Parse inputs and push to parent coordinator
@@ -810,6 +886,7 @@ export class Dashboard {
     let smaFastPeriod = 10, smaSlowPeriod = 30;
     let rsiPeriod = 14, rsiOversold = 30, rsiOverbought = 70;
     let macdFastPeriod = 12, macdSlowPeriod = 26, macdSignalPeriod = 9;
+    let bbPeriod = 20, bbMultiplier = 2.0;
 
     if (strategyType === 'sma_crossover') {
       smaFastPeriod = parseInt((document.getElementById('slider-sma-fast') as HTMLInputElement)?.value) || 10;
@@ -822,6 +899,9 @@ export class Dashboard {
       macdFastPeriod = parseInt((document.getElementById('slider-macd-fast') as HTMLInputElement)?.value) || 12;
       macdSlowPeriod = parseInt((document.getElementById('slider-macd-slow') as HTMLInputElement)?.value) || 26;
       macdSignalPeriod = parseInt((document.getElementById('slider-macd-sig') as HTMLInputElement)?.value) || 9;
+    } else if (strategyType === 'bollinger_bands') {
+      bbPeriod = parseInt((document.getElementById('slider-bb-period') as HTMLInputElement)?.value) || 20;
+      bbMultiplier = parseFloat((document.getElementById('slider-bb-multiplier') as HTMLInputElement)?.value) || 2.0;
     }
 
     const strategyConfig: StrategyConfig = {
@@ -829,7 +909,8 @@ export class Dashboard {
       parameters: {
         smaFastPeriod, smaSlowPeriod,
         rsiPeriod, rsiOversold, rsiOverbought,
-        macdFastPeriod, macdSlowPeriod, macdSignalPeriod
+        macdFastPeriod, macdSlowPeriod, macdSignalPeriod,
+        bbPeriod, bbMultiplier
       }
     };
 

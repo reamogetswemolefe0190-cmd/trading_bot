@@ -195,7 +195,13 @@ export class Robot {
     const config = this.activeStrategyConfigs.get(symbol);
     if (!config) return;
 
-    const signal = Strategies.evaluate(candles, config);
+    let signal: 'BUY' | 'SELL' | 'HOLD' = 'HOLD';
+    if (config.type === 'ml_predict') {
+      signal = await this.queryMLPredictor(symbol, candles);
+    } else {
+      signal = Strategies.evaluate(candles, config);
+    }
+
     if (signal === 'HOLD') return;
 
     try {
@@ -510,6 +516,32 @@ export class Robot {
         return;
       }
       await this.executeOrder(symbol, 'SELL', activePosition.quantity, price);
+    }
+  }
+
+  // Intercept helper to query the Python Flask/FastAPI ML server for predictions
+  private async queryMLPredictor(symbol: string, candles: Candle[]): Promise<'BUY' | 'SELL' | 'HOLD'> {
+    try {
+      // Send the last 50 candles to fit feature expectations of ML backend
+      const recent = candles.slice(-50);
+      const res = await fetch('http://localhost:5000/predict', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          symbol,
+          candles: recent
+        })
+      });
+      if (!res.ok) {
+        throw new Error(`HTTP Error ${res.status}`);
+      }
+      const data = await res.json();
+      return data.prediction || 'HOLD';
+    } catch (e: any) {
+      console.warn(`[Robot] Python ML Predictor failed: ${e.message}. Defaulting to HOLD.`);
+      return 'HOLD';
     }
   }
 }

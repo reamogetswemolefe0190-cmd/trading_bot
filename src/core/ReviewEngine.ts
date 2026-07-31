@@ -133,6 +133,26 @@ export class ReviewEngine {
           });
         });
       });
+    } else if (type === 'bollinger_bands') {
+      const periods = [10, 20, 30];
+      const multipliers = [1.5, 2.0, 2.5];
+
+      periods.forEach(p => {
+        multipliers.forEach(m => {
+          const finalEquity = this.runMockBacktest(candles, initialEquity, {
+            type: 'bollinger_bands',
+            parameters: {
+              ...currentConfig.parameters,
+              bbPeriod: p,
+              bbMultiplier: m
+            }
+          });
+          if (finalEquity > bestEquity) {
+            bestEquity = finalEquity;
+            bestParams = { bbPeriod: p, bbMultiplier: m };
+          }
+        });
+      });
     }
 
     const currentEquity = this.runMockBacktest(candles, initialEquity, currentConfig);

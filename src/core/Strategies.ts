@@ -91,6 +91,24 @@ export class Strategies {
     return rsi;
   }
 
+  // Helper: Standard Deviation
+  static calculateStdDev(prices: number[], sma: number[], period: number): number[] {
+    const stdDev: number[] = [];
+    for (let i = 0; i < prices.length; i++) {
+      if (i < period - 1 || isNaN(sma[i])) {
+        stdDev.push(NaN);
+      } else {
+        let sumSqDiff = 0;
+        for (let j = 0; j < period; j++) {
+          const diff = prices[i - j] - sma[i];
+          sumSqDiff += diff * diff;
+        }
+        stdDev.push(Math.sqrt(sumSqDiff / period));
+      }
+    }
+    return stdDev;
+  }
+
   // Helper: MACD
   static calculateMACD(
     prices: number[], 
@@ -218,6 +236,35 @@ export class Strategies {
         }
         // MACD crosses below Signal Line -> Sell
         if (prevMacd >= prevSignal && curMacd < curSignal) {
+          return 'SELL';
+        }
+        return 'HOLD';
+      }
+
+      case 'bollinger_bands': {
+        const bbPeriod = config.parameters.bbPeriod || 20;
+        const bbMultiplier = config.parameters.bbMultiplier || 2.0;
+        if (len < bbPeriod + 2) return 'HOLD';
+
+        const sma = this.calculateSMA(closes, bbPeriod);
+        const stdDev = this.calculateStdDev(closes, sma, bbPeriod);
+
+        const curClose = closes[len - 1];
+        const prevClose = closes[len - 2];
+        const curSma = sma[len - 1];
+        const curStd = stdDev[len - 1];
+
+        if (isNaN(curSma) || isNaN(curStd)) return 'HOLD';
+
+        const upperBand = curSma + bbMultiplier * curStd;
+        const lowerBand = curSma - bbMultiplier * curStd;
+
+        // Buy if price drops below lower band (oversold rebound expected)
+        if (prevClose >= lowerBand && curClose < lowerBand) {
+          return 'BUY';
+        }
+        // Sell if price spikes above upper band (overbought correction expected)
+        if (prevClose <= upperBand && curClose > upperBand) {
           return 'SELL';
         }
         return 'HOLD';

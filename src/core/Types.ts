@@ -37,7 +37,7 @@ export interface BrokerConfig {
   apiSecret: string;
 }
 
-export type StrategyType = 'sma_crossover' | 'rsi_mean_reversion' | 'macd';
+export type StrategyType = 'sma_crossover' | 'rsi_mean_reversion' | 'macd' | 'bollinger_bands' | 'ml_predict';
 
 export interface StrategyConfig {
   type: StrategyType;
@@ -53,6 +53,9 @@ export interface StrategyConfig {
     macdFastPeriod: number;
     macdSlowPeriod: number;
     macdSignalPeriod: number;
+    // Bollinger Bands
+    bbPeriod?: number;
+    bbMultiplier?: number;
   };
 }
 
