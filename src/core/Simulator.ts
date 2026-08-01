@@ -26,8 +26,14 @@ export class Simulator {
   public static assets: AssetInfo[] = [
     { symbol: 'BTC/USD', name: 'Bitcoin / US Dollar', type: 'crypto', defaultPrice: 65000, volatility: 0.015, drift: 0.0001 },
     { symbol: 'ETH/USD', name: 'Ethereum / US Dollar', type: 'crypto', defaultPrice: 3400, volatility: 0.02, drift: 0.0001 },
+    { symbol: 'SOL/USD', name: 'Solana / US Dollar', type: 'crypto', defaultPrice: 150, volatility: 0.03, drift: 0.0002 },
+    { symbol: 'DOGE/USD', name: 'Dogecoin / US Dollar', type: 'crypto', defaultPrice: 0.12, volatility: 0.045, drift: -0.0001 },
+    { symbol: 'LTC/USD', name: 'Litecoin / US Dollar', type: 'crypto', defaultPrice: 80, volatility: 0.022, drift: 0.00005 },
     { symbol: 'AAPL', name: 'Apple Inc. Common Stock', type: 'stock', defaultPrice: 180, volatility: 0.008, drift: 0.0002 },
-    { symbol: 'TSLA', name: 'Tesla Inc. Common Stock', type: 'stock', defaultPrice: 220, volatility: 0.025, drift: -0.0001 }
+    { symbol: 'TSLA', name: 'Tesla Inc. Common Stock', type: 'stock', defaultPrice: 220, volatility: 0.025, drift: -0.0001 },
+    { symbol: 'NVDA', name: 'Nvidia Inc. Common Stock', type: 'stock', defaultPrice: 120, volatility: 0.028, drift: 0.0003 },
+    { symbol: 'MSFT', name: 'Microsoft Corp. Common Stock', type: 'stock', defaultPrice: 420, volatility: 0.009, drift: 0.00015 },
+    { symbol: 'GOOGL', name: 'Alphabet Inc. Common Stock', type: 'stock', defaultPrice: 175, volatility: 0.01, drift: 0.0002 }
   ];
 
   constructor(defaultAssetSymbol: string = 'BTC/USD') {
