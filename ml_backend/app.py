@@ -84,10 +84,47 @@ def fetch_candles_from_alpaca(symbol, days, api_key, api_secret):
         
     return formatted_data
 
+# Helper: Fetch crypto candles from Coinbase public API (No keys required)
+def fetch_candles_from_coinbase(symbol):
+    import datetime
+    import urllib.request
+    
+    clean_sym = symbol.replace('/', '-').upper()
+    if '-' not in clean_sym:
+        if clean_sym.startswith('BTC'):
+            clean_sym = 'BTC-USD'
+        elif clean_sym.startswith('ETH'):
+            clean_sym = 'ETH-USD'
+        else:
+            clean_sym = clean_sym[:3] + '-' + clean_sym[3:]
+            
+    url = f"https://api.exchange.coinbase.com/products/{clean_sym}/candles?granularity=86400"
+    
+    req = urllib.request.Request(
+        url, 
+        headers={'User-Agent': 'AegisTrader/1.0'}
+    )
+    
+    with urllib.request.urlopen(req) as response:
+        res_data = json.loads(response.read().decode())
+        
+    formatted_data = []
+    for bar in reversed(res_data):
+        dt = datetime.datetime.utcfromtimestamp(bar[0])
+        formatted_data.append({
+            'time': dt.strftime('%Y-%m-%d'),
+            'open': float(bar[3]),
+            'high': float(bar[2]),
+            'low': float(bar[1]),
+            'close': float(bar[4]),
+            'volume': float(bar[5])
+        })
+    return formatted_data
+
 @app.route('/train', methods=['POST'])
 def train():
     """
-    Trains a RandomForest model dynamically from Alpaca or a historical candles file
+    Trains a RandomForest model dynamically from Alpaca, Coinbase (no-auth), or local files
     """
     req_data = request.get_json()
     if not req_data or 'symbol' not in req_data:
@@ -104,18 +141,26 @@ def train():
         except Exception as fetch_err:
             return jsonify({"error": f"Failed to fetch historical data from Alpaca: {str(fetch_err)}"}), 500
     else:
-        filepath = req_data.get('filepath')
-        if not filepath:
-            return jsonify({"error": "Missing filepath or Alpaca API keys to retrieve history"}), 400
-            
-        if not os.path.exists(filepath):
-            return jsonify({"error": f"File not found: {filepath}"}), 404
-            
-        try:
-            with open(filepath, 'r') as f:
-                candles = json.load(f)
-        except Exception as file_err:
-            return jsonify({"error": f"Failed to read history file: {str(file_err)}"}), 500
+        # No keys provided! If it is a crypto symbol, fall back to Coinbase's public no-auth feed
+        is_crypto = '/' in symbol or 'BTC' in symbol or 'ETH' in symbol
+        if is_crypto:
+            try:
+                candles = fetch_candles_from_coinbase(symbol)
+            except Exception as cb_err:
+                return jsonify({"error": f"Failed to fetch public crypto history from Coinbase: {str(cb_err)}"}), 500
+        else:
+            filepath = req_data.get('filepath')
+            if not filepath:
+                return jsonify({"error": "Missing Alpaca API keys to retrieve stock history"}), 400
+                
+            if not os.path.exists(filepath):
+                return jsonify({"error": f"File not found: {filepath}"}), 404
+                
+            try:
+                with open(filepath, 'r') as f:
+                    candles = json.load(f)
+            except Exception as file_err:
+                return jsonify({"error": f"Failed to read history file: {str(file_err)}"}), 500
 
     try:
         df = pd.DataFrame(candles)
