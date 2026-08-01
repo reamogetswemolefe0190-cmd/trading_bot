@@ -51,22 +51,30 @@ export class Dashboard {
     const cachedStrategy = this.getSavedStrategy();
 
     // 2. Render layout HTML
+    const hour = new Date().getHours();
+    let greeting = "Good morning";
+    if (hour >= 12 && hour < 18) greeting = "Good afternoon";
+    else if (hour >= 18) greeting = "Good evening";
+
     this.container.innerHTML = `
-      <header class="app-header glass-panel" role="banner">
+      <header class="app-header" role="banner">
         <div class="brand">
           <div class="brand-logo">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
               <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275z"/>
             </svg>
           </div>
-          <h1 class="brand-title">Aegis Algorithmic Trader</h1>
+          <div style="display: flex; flex-direction: column;">
+            <h1 class="brand-title" style="font-size: 15px; font-weight: 600; color: #fff; line-height: 1.2;">${greeting}, Reamogetswe 👋</h1>
+            <span id="market-status-greeting" style="font-size: 13px; color: var(--text-secondary); margin-top: 1px;">Markets are moderately bullish today.</span>
+          </div>
         </div>
         <div class="header-actions">
           <div class="status-badge">
             <span id="status-dot" class="status-dot paused"></span>
             <span id="status-text" class="status-text-label">Paused</span>
           </div>
-          <button id="btn-kill" class="btn btn-danger" aria-label="Liquidate all positions immediately">
+          <button id="btn-kill" class="btn btn-danger" aria-label="Liquidate all positions immediately" style="padding: 8px 16px;">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
             Emergency Kill
           </button>
@@ -82,10 +90,12 @@ export class Dashboard {
         <div class="stat-card glass-panel">
           <span class="stat-label">Available Cash</span>
           <span id="stat-cash" class="stat-value">$100,000.00</span>
+          <span style="font-size:11px; color:var(--text-muted); margin-top: 4px;">Buying Power</span>
         </div>
         <div class="stat-card glass-panel">
           <span class="stat-label">Active Positions</span>
           <span id="stat-positions" class="stat-value">0</span>
+          <span style="font-size:11px; color:var(--text-muted); margin-top: 4px;">Open Holdings</span>
         </div>
         <div class="stat-card glass-panel">
           <span class="stat-label">Realized PnL</span>
@@ -95,140 +105,16 @@ export class Dashboard {
         <div class="stat-card glass-panel">
           <span class="stat-label">Win Rate</span>
           <span id="stat-winrate" class="stat-value">0.0%</span>
+          <span style="font-size:11px; color:var(--text-muted); margin-top: 4px;">Success Ratio</span>
         </div>
       </section>
 
       <main class="workspace-grid">
-        <aside class="sidebar" aria-label="Configuration Settings">
-          <!-- Connection Panel -->
-          <div class="config-section glass-panel">
-            <h2 class="section-title">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2" ry="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
-              Broker Account
-            </h2>
-            <div class="input-group">
-              <label for="select-broker">Trading Broker</label>
-              <select id="select-broker">
-                <option value="simulator" ${cachedBroker.type === 'simulator' ? 'selected' : ''}>Local Simulator (Safe)</option>
-                <option value="alpaca-paper" ${cachedBroker.type === 'alpaca-paper' ? 'selected' : ''}>Alpaca Paper Sandbox</option>
-                <option value="alpaca-live" ${cachedBroker.type === 'alpaca-live' ? 'selected' : ''}>Alpaca Live Account</option>
-              </select>
-            </div>
-            <div id="alpaca-keys-wrapper" style="display: ${cachedBroker.type === 'simulator' ? 'none' : 'flex'}; flex-direction: column; gap: 12px;">
-              <div class="input-group">
-                <label for="input-api-key">API Key ID</label>
-                <input type="text" id="input-api-key" placeholder="APCA-API-KEY-ID" value="${cachedBroker.apiKey}">
-              </div>
-              <div class="input-group">
-                <label for="input-api-secret">API Secret Key</label>
-                <input type="password" id="input-api-secret" placeholder="API Secret" value="${cachedBroker.apiSecret}">
-              </div>
-            </div>
-          </div>
-
-          <!-- Watchlist Panel -->
-          <div class="config-section glass-panel watchlist-card">
-            <h2 class="section-title">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-              Market Watchlist
-            </h2>
-            <table class="watchlist-table">
-              <tbody id="watchlist-rows-container">
-                <!-- Loaded dynamically by renderWatchlist -->
-              </tbody>
-            </table>
-          </div>
-
-          <!-- Risk Limits -->
-          <div class="config-section glass-panel">
-            <h2 class="section-title">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-              Risk Controls <span id="risk-scope-badge" style="font-size:0.65rem; color:var(--color-primary); margin-left:auto;">[BTC/USD]</span>
-            </h2>
-            <div class="input-group">
-              <label for="select-mode">Execution Mode</label>
-              <select id="select-mode">
-                <option value="advisor" ${cachedRisk.executionMode === 'advisor' ? 'selected' : ''}>Advisor (Manual Confirms)</option>
-                <option value="autopilot" ${cachedRisk.executionMode === 'autopilot' ? 'selected' : ''}>Autopilot (Fully Automated)</option>
-              </select>
-            </div>
-            <div class="input-group">
-              <label for="input-max-pos-size">Max Order Allocation ($)</label>
-              <input type="number" id="input-max-pos-size" value="${cachedRisk.maxPositionSize}" min="10" step="50">
-            </div>
-            <div class="input-group">
-              <label for="input-max-positions">Max Open Positions (Global)</label>
-              <input type="number" id="input-max-positions" value="${cachedRisk.maxPositions}" min="1" max="10">
-            </div>
-            <div class="input-group">
-              <label for="input-stop-loss">Daily Stop Loss Limit (%)</label>
-              <input type="number" id="input-stop-loss" value="${cachedRisk.dailyStopLossPct}" min="1" max="20" step="0.5">
-            </div>
-            <div class="input-group">
-              <label for="input-pos-stop-loss">Position Stop Loss (%)</label>
-              <input type="number" id="input-pos-stop-loss" value="${cachedRisk.positionStopLossPct || 2.0}" min="0.5" max="10" step="0.1">
-            </div>
-            <div class="input-group">
-              <label for="input-pos-take-profit">Position Take Profit (%)</label>
-              <input type="number" id="input-pos-take-profit" value="${cachedRisk.positionTakeProfitPct || 5.0}" min="0.5" max="30" step="0.5">
-            </div>
-          </div>
-
-          <!-- Strategy Panel -->
-          <div class="config-section glass-panel">
-            <h2 class="section-title">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
-              Strategy Engine <span id="strategy-scope-badge" style="font-size:0.65rem; color:var(--color-primary); margin-left:auto;">[BTC/USD]</span>
-            </h2>
-            <div class="input-group">
-              <label for="select-strategy">Active Logic</label>
-              <select id="select-strategy">
-                <option value="sma_crossover" ${cachedStrategy.type === 'sma_crossover' ? 'selected' : ''}>SMA Crossover (Trend)</option>
-                <option value="rsi_mean_reversion" ${cachedStrategy.type === 'rsi_mean_reversion' ? 'selected' : ''}>RSI Mean Reversion (Momentum)</option>
-                <option value="macd" ${cachedStrategy.type === 'macd' ? 'selected' : ''}>MACD Crossover (Trend)</option>
-                <option value="bollinger_bands" ${cachedStrategy.type === 'bollinger_bands' ? 'selected' : ''}>Bollinger Bands (Mean Reversion)</option>
-                <option value="ml_predict" ${cachedStrategy.type === 'ml_predict' ? 'selected' : ''}>Python ML Predictor (AI)</option>
-              </select>
-            </div>
-
-            <!-- Dynamic sliders placeholder -->
-            <div id="strategy-sliders" style="display: flex; flex-direction: column; gap: 12px;"></div>
-          </div>
-
-          <!-- Quick Market Orders -->
-          <div class="config-section glass-panel">
-            <h2 class="section-title">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-              Quick Market Trade <span id="quick-scope-badge" style="font-size:0.65rem; color:var(--color-primary); margin-left:auto;">[BTC/USD]</span>
-            </h2>
-            <div class="control-buttons-row">
-              <button id="btn-quick-buy" class="btn btn-success" style="font-size:0.8rem; padding:8px 12px;">Market BUY</button>
-              <button id="btn-quick-sell" class="btn btn-danger" style="font-size:0.8rem; padding:8px 12px;">Market SELL</button>
-            </div>
-          </div>
-
-          <!-- Backtest Controls -->
-          <div class="config-section glass-panel">
-            <h2 class="section-title">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-              Backtesting Suite <span id="backtest-scope-badge" style="font-size:0.65rem; color:var(--color-primary); margin-left:auto;">[BTC/USD]</span>
-            </h2>
-            <div class="input-group">
-              <label for="input-backtest-days">History Scope (Days)</label>
-              <input type="number" id="input-backtest-days" value="180" min="30" max="365">
-            </div>
-            <button id="btn-backtest" class="btn btn-secondary">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-              Run Historical Backtest
-            </button>
-          </div>
-        </aside>
-
         <section class="main-display">
           <!-- Chart -->
           <div class="chart-card glass-panel">
             <header class="chart-header">
-              <h2 id="chart-asset-title" style="font-size: 1.1rem; font-weight: 600;">BTC/USD Live Feed</h2>
+              <h2 id="chart-asset-title">BTC/USD Live Feed</h2>
               <div class="indicator-panel" id="live-indicator-values">
                 <!-- Indicators populated here -->
               </div>
@@ -236,25 +122,103 @@ export class Dashboard {
             <div id="trading-chart" class="chart-container"></div>
           </div>
 
-          <!-- Tab Bar Layout -->
-          <div class="tabs-card glass-panel">
-            <nav class="tab-headers" role="tablist">
-              <button id="tab-log" class="tab-btn active" role="tab" aria-selected="true" aria-controls="pane-log">Console Terminal</button>
-              <button id="tab-ledger" class="tab-btn" role="tab" aria-selected="false" aria-controls="pane-ledger">Trade Ledger</button>
-              <button id="tab-performance" class="tab-btn" role="tab" aria-selected="false" aria-controls="pane-performance">Performance Review</button>
-              <button id="tab-alton" class="tab-btn" role="tab" aria-selected="false" aria-controls="pane-alton">Son of Alton (AI)</button>
-            </nav>
-            <div class="tab-content">
-              <!-- Logs Pane -->
-              <div id="pane-log" class="tab-pane active" role="tabpanel">
-                <div id="terminal-log" class="log-viewer">
-                  <div class="log-entry"><span class="log-time">[System]</span> <span class="log-level info">INFO</span> <span class="log-msg">Aegis Algorithmic Terminal Initialized. Select Local Simulator to test, or link credentials.</span></div>
+          <!-- 3-Column Bottom Grid Layout -->
+          <div class="bottom-grid">
+            <!-- Column 1: AI Insight & Sentiment -->
+            <div class="bottom-col">
+              <h3 class="section-title">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+                AI Insight & Sentiment
+              </h3>
+              
+              <!-- Son of Alton Panel -->
+              <div class="config-section" style="flex: 1; display: flex; flex-direction: column; gap: 14px;">
+                <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px; background: rgba(255,255,255,0.01); border-radius: 12px; border: 1px solid var(--border-light);">
+                  <div>
+                    <strong style="color: var(--color-primary); font-size: 13px; font-weight:600; display: block;">Son of Alton Optimizer</strong>
+                    <span style="font-size: 11px; color: var(--text-muted);">Enables autonomous real-time parameter tuning</span>
+                  </div>
+                  <label class="switch-container">
+                    <input type="checkbox" id="checkbox-alton-toggle" style="opacity: 0; width: 0; height: 0;">
+                    <span class="switch-slider"></span>
+                  </label>
+                </div>
+
+                <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 8px; overflow: hidden;">
+                  <span class="stat-label" style="font-size:11px;">AI Optimization Decisions</span>
+                  <div id="alton-terminal-log" class="log-viewer" style="flex-grow: 1; overflow-y: auto;">
+                    <div class="log-entry"><span class="log-time">[System]</span> <span class="log-level info">AI</span> <span class="log-msg">Son of Alton idle. Enable the toggle to activate parameter auditing.</span></div>
+                  </div>
+                </div>
+
+                <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 8px; overflow: hidden;">
+                  <span class="stat-label" style="font-size:11px;">Market News & Sentiment Scans</span>
+                  <div id="alton-sentiment-viewer" class="log-viewer" style="flex-grow: 1; overflow-y: auto; background: rgba(0, 0, 0, 0.45); padding: 12px; display: flex; flex-direction: column; gap: 10px;">
+                    <em style="color: var(--text-muted); font-size: 13px;">Waiting for sentiment audit scans to parse news feed...</em>
+                  </div>
+                </div>
+
+                <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 8px; overflow: hidden;">
+                  <span class="stat-label" style="font-size:11px;">Latest Progress Report</span>
+                  <div id="alton-report-viewer" class="log-viewer" style="flex-grow: 1; overflow-y: auto; background: rgba(0, 0, 0, 0.45); line-height: 1.6; font-family: var(--font-sans); font-size: 13px; padding: 16px; color: var(--text-secondary);">
+                    <em style="color: var(--text-muted);">No reports compiled yet. Auditing must run for 3 simulated cycles to generate report cards.</em>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Column 2: Trade Ledger & Performance -->
+            <div class="bottom-col">
+              <h3 class="section-title">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+                Ledger & Performance
+              </h3>
+
+              <!-- Backtest Panel -->
+              <div class="config-section" style="padding: 16px;">
+                <h4 style="font-size: 13px; font-weight: 600; color: var(--text-main); margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
+                  Backtesting Suite 
+                  <span id="backtest-scope-badge" style="font-size: 11px; color: var(--color-primary);">[BTC/USD]</span>
+                </h4>
+                <div style="display: flex; gap: 12px; align-items: flex-end;">
+                  <div class="input-group" style="flex: 1;">
+                    <label for="input-backtest-days">History Scope (Days)</label>
+                    <input type="number" id="input-backtest-days" value="180" min="30" max="730">
+                  </div>
+                  <button id="btn-backtest" class="btn btn-secondary" style="padding: 10px 16px;">Run Backtest</button>
                 </div>
               </div>
 
-              <!-- Ledger Pane -->
-              <div id="pane-ledger" class="tab-pane" role="tabpanel">
-                <div class="data-table-wrapper">
+              <!-- Metrics Summary -->
+              <div class="config-section" style="padding: 16px;">
+                <span class="stat-label" style="font-size:11px; display:block; margin-bottom:10px;">Self-Review Performance</span>
+                <div class="perf-metrics-grid" style="margin-bottom: 12px;">
+                  <div class="perf-metric-box">
+                    <span class="stat-label" style="font-size: 11px;">Profit Factor</span>
+                    <span id="perf-factor" class="perf-metric-val">0.00</span>
+                  </div>
+                  <div class="perf-metric-box">
+                    <span class="stat-label" style="font-size: 11px;">Win Rate</span>
+                    <span id="perf-winrate" class="perf-metric-val">0.0%</span>
+                  </div>
+                  <div class="perf-metric-box">
+                    <span class="stat-label" style="font-size: 11px;">Avg Win</span>
+                    <span id="perf-avgwin" class="perf-metric-val">$0.00</span>
+                  </div>
+                  <div class="perf-metric-box">
+                    <span class="stat-label" style="font-size: 11px;">Avg Loss</span>
+                    <span id="perf-avgloss" class="perf-metric-val">$0.00</span>
+                  </div>
+                </div>
+                <div id="perf-recommendations-list">
+                  <div class="rec-item">Trade ledger is currently empty. Run backtests or trade paper accounts to generate analytical recommendation reports.</div>
+                </div>
+              </div>
+
+              <!-- Trade Ledger List -->
+              <div class="config-section" style="flex: 1; display: flex; flex-direction: column; overflow: hidden; padding: var(--spacing-sm);">
+                <span class="stat-label" style="font-size:11px; margin-bottom:8px; display:block;">Recent Trade Executions</span>
+                <div class="data-table-wrapper" style="flex: 1; overflow-y: auto;">
                   <table class="data-table">
                     <thead>
                       <tr>
@@ -274,77 +238,113 @@ export class Dashboard {
                   </table>
                 </div>
               </div>
+            </div>
 
-              <!-- Performance Optimizer Pane -->
-              <div id="pane-performance" class="tab-pane" role="tabpanel">
-                <div class="performance-view">
-                  <div class="perf-metrics-grid">
-                    <div class="perf-metric-box">
-                      <span class="stat-label" style="font-size: 0.65rem;">Profit Factor</span>
-                      <span id="perf-factor" class="perf-metric-val">0.00</span>
-                    </div>
-                    <div class="perf-metric-box">
-                      <span class="stat-label" style="font-size: 0.65rem;">Win Rate</span>
-                      <span id="perf-winrate" class="perf-metric-val">0.0%</span>
-                    </div>
-                    <div class="perf-metric-box">
-                      <span class="stat-label" style="font-size: 0.65rem;">Avg Win</span>
-                      <span id="perf-avgwin" class="perf-metric-val">$0.00</span>
-                    </div>
-                    <div class="perf-metric-box">
-                      <span class="stat-label" style="font-size: 0.65rem;">Avg Loss</span>
-                      <span id="perf-avgloss" class="perf-metric-val">$0.00</span>
-                    </div>
+            <!-- Column 3: Config & Watchlist -->
+            <div class="bottom-col">
+              <h3 class="section-title">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                System Config & Watchlist
+              </h3>
+
+              <!-- Watchlist -->
+              <div class="config-section" style="padding: var(--spacing-sm);">
+                <span class="stat-label" style="font-size:11px; margin-bottom:8px; display:block;">Watchlist Overview</span>
+                <table class="watchlist-table">
+                  <tbody id="watchlist-rows-container">
+                    <!-- Loaded dynamically by renderWatchlist -->
+                  </tbody>
+                </table>
+              </div>
+
+              <!-- Quick Order -->
+              <div class="config-section" style="padding: 16px;">
+                <h4 style="font-size: 13px; font-weight: 600; color: var(--text-main); margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
+                  Quick Market Trade
+                  <span id="quick-scope-badge" style="font-size: 11px; color: var(--color-primary);">[BTC/USD]</span>
+                </h4>
+                <div class="control-buttons-row">
+                  <button id="btn-quick-buy" class="btn btn-success" style="padding: 10px 16px;">Market BUY</button>
+                  <button id="btn-quick-sell" class="btn btn-danger" style="padding: 10px 16px;">Market SELL</button>
+                </div>
+              </div>
+
+              <!-- Connection Panel -->
+              <div class="config-section">
+                <span class="stat-label" style="font-size:11px;">Broker Account Settings</span>
+                <div class="input-group">
+                  <label for="select-broker">Trading Broker</label>
+                  <select id="select-broker">
+                    <option value="simulator" ${cachedBroker.type === 'simulator' ? 'selected' : ''}>Local Simulator (Safe)</option>
+                    <option value="alpaca-paper" ${cachedBroker.type === 'alpaca-paper' ? 'selected' : ''}>Alpaca Paper Sandbox</option>
+                    <option value="alpaca-live" ${cachedBroker.type === 'alpaca-live' ? 'selected' : ''}>Alpaca Live Account</option>
+                  </select>
+                </div>
+                <div id="alpaca-keys-wrapper" style="display: ${cachedBroker.type === 'simulator' ? 'none' : 'flex'}; flex-direction: column; gap: 12px;">
+                  <div class="input-group">
+                    <label for="input-api-key">API Key ID</label>
+                    <input type="text" id="input-api-key" placeholder="APCA-API-KEY-ID" value="${cachedBroker.apiKey}">
                   </div>
-                  <div class="perf-recommendations">
-                    <h3>Self-Review & Recommender Engine</h3>
-                    <div id="perf-recommendations-list">
-                      <div class="rec-item">Trade ledger is currently empty. Run backtests or trade paper accounts to generate analytical recommendation reports.</div>
-                    </div>
+                  <div class="input-group">
+                    <label for="input-api-secret">API Secret Key</label>
+                    <input type="password" id="input-api-secret" placeholder="API Secret" value="${cachedBroker.apiSecret}">
                   </div>
                 </div>
               </div>
 
-              <!-- Son of Alton AI Optimizer Pane -->
-              <div id="pane-alton" class="tab-pane" role="tabpanel">
-                <div class="performance-view" style="display: grid; grid-template-columns: 1.1fr 1fr 1.2fr; gap: 16px; height: 100%;">
-                  
-                  <!-- Left side: Log & Toggle -->
-                  <div style="display: flex; flex-direction: column; gap: 12px; height: 100%;">
-                    <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px; background: rgba(255,255,255,0.02); border-radius: 8px; border: 1px solid var(--border-light);">
-                      <div>
-                        <strong style="color: var(--color-primary); font-size: 0.9rem; display: block;">Son of Alton Optimizer</strong>
-                        <span style="font-size: 0.75rem; color: var(--text-muted);">Enables autonomous real-time parameter tuning</span>
-                      </div>
-                      <label class="switch-container" style="position: relative; display: inline-block; width: 44px; height: 22px;">
-                        <input type="checkbox" id="checkbox-alton-toggle" style="opacity: 0; width: 0; height: 0;">
-                        <span class="switch-slider" style="position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(255,255,255,0.1); transition: .4s; border-radius: 22px;"></span>
-                      </label>
-                    </div>
-                    <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 6px; overflow: hidden;">
-                      <span class="stat-label" style="font-size:0.75rem;">AI Optimization Decisions</span>
-                      <div id="alton-terminal-log" class="log-viewer" style="flex-grow: 1; overflow-y: auto;">
-                        <div class="log-entry"><span class="log-time">[System]</span> <span class="log-level info">AI</span> <span class="log-msg">Son of Alton idle. Enable the toggle to activate parameter auditing.</span></div>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <!-- Middle side: News Sentiment Ticker -->
-                  <div style="display: flex; flex-direction: column; gap: 8px; height: 100%; overflow: hidden;">
-                    <span class="stat-label" style="font-size:0.75rem;">Market News & Sentiment Scans</span>
-                    <div id="alton-sentiment-viewer" class="log-viewer" style="flex-grow: 1; overflow-y: auto; background: rgba(0, 0, 0, 0.2); padding: 12px; display: flex; flex-direction: column; gap: 10px;">
-                      <em style="color: var(--text-muted); font-size: 0.8rem;">Waiting for sentiment audit scans to parse news feed...</em>
-                    </div>
-                  </div>
+              <!-- Risk Panel -->
+              <div class="config-section">
+                <span class="stat-label" style="font-size:11px; display: flex; justify-content: space-between; align-items: center;">
+                  Asset Risk Limits
+                  <span id="risk-scope-badge" style="color: var(--color-primary);">[BTC/USD]</span>
+                </span>
+                <div class="input-group">
+                  <label for="select-mode">Execution Mode</label>
+                  <select id="select-mode">
+                    <option value="advisor" ${cachedRisk.executionMode === 'advisor' ? 'selected' : ''}>Advisor (Manual Confirms)</option>
+                    <option value="autopilot" ${cachedRisk.executionMode === 'autopilot' ? 'selected' : ''}>Autopilot (Fully Automated)</option>
+                  </select>
+                </div>
+                <div class="input-group">
+                  <label for="input-max-pos-size">Max Order Allocation ($)</label>
+                  <input type="number" id="input-max-pos-size" value="${cachedRisk.maxPositionSize}" min="10" step="50">
+                </div>
+                <div class="input-group">
+                  <label for="input-max-positions">Max Open Positions (Global)</label>
+                  <input type="number" id="input-max-positions" value="${cachedRisk.maxPositions}" min="1" max="10">
+                </div>
+                <div class="input-group">
+                  <label for="input-stop-loss">Daily Stop Loss Limit (%)</label>
+                  <input type="number" id="input-stop-loss" value="${cachedRisk.dailyStopLossPct}" min="1" max="20" step="0.5">
+                </div>
+                <div class="input-group">
+                  <label for="input-pos-stop-loss">Position Stop Loss (%)</label>
+                  <input type="number" id="input-pos-stop-loss" value="${cachedRisk.positionStopLossPct || 2.0}" min="0.5" max="10" step="0.1">
+                </div>
+                <div class="input-group">
+                  <label for="input-pos-take-profit">Position Take Profit (%)</label>
+                  <input type="number" id="input-pos-take-profit" value="${cachedRisk.positionTakeProfitPct || 5.0}" min="0.5" max="30" step="0.5">
+                </div>
+              </div>
 
-                  <!-- Right side: Reports Viewer -->
-                  <div style="display: flex; flex-direction: column; gap: 8px; height: 100%; overflow: hidden;">
-                    <span class="stat-label" style="font-size:0.75rem;">Latest Progress Report</span>
-                    <div id="alton-report-viewer" class="log-viewer" style="flex-grow: 1; overflow-y: auto; background: rgba(0, 0, 0, 0.2); line-height: 1.5; font-family: var(--font-sans); font-size: 0.85rem; padding: 16px;">
-                      <em style="color: var(--text-muted);">No reports compiled yet. Auditing must run for 3 simulated cycles to generate report cards.</em>
-                    </div>
-                  </div>
-
+              <!-- Strategy Panel -->
+              <div class="config-section">
+                <span class="stat-label" style="font-size:11px; display: flex; justify-content: space-between; align-items: center;">
+                  Strategy Parameters
+                  <span id="strategy-scope-badge" style="color: var(--color-primary);">[BTC/USD]</span>
+                </span>
+                <div class="input-group">
+                  <label for="select-strategy">Active Logic</label>
+                  <select id="select-strategy">
+                    <option value="sma_crossover" ${cachedStrategy.type === 'sma_crossover' ? 'selected' : ''}>SMA Crossover</option>
+                    <option value="rsi_mean_reversion" ${cachedStrategy.type === 'rsi_mean_reversion' ? 'selected' : ''}>RSI Mean Reversion</option>
+                    <option value="macd" ${cachedStrategy.type === 'macd' ? 'selected' : ''}>MACD Convergence</option>
+                    <option value="bollinger_bands" ${cachedStrategy.type === 'bollinger_bands' ? 'selected' : ''}>Bollinger Bands</option>
+                    <option value="ml_predict" ${cachedStrategy.type === 'ml_predict' ? 'selected' : ''}>Python ML Predictor (AI)</option>
+                  </select>
+                </div>
+                <div id="strategy-sliders" style="display: flex; flex-direction: column; gap: var(--spacing-sm); margin-top: 8px;">
+                  <!-- Filled dynamically -->
                 </div>
               </div>
             </div>
@@ -353,9 +353,9 @@ export class Dashboard {
       </main>
 
       <!-- Active Control Row (Fixed at bottom) -->
-      <footer class="glass-panel" style="padding: 12px 24px; display: flex; justify-content: flex-end;" role="contentinfo">
-        <div class="control-buttons-row" style="width: 280px;">
-          <button id="btn-start" class="btn btn-success">
+      <footer class="glass-panel" style="padding: 16px var(--spacing-md); display: flex; justify-content: flex-end;" role="contentinfo">
+        <div class="control-buttons-row" style="width: 240px;">
+          <button id="btn-start" class="btn btn-success" style="width: 100%;">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
             Start Trading Bot
           </button>
@@ -368,19 +368,19 @@ export class Dashboard {
           <header class="modal-header">
             <h3 class="modal-title" id="advisor-modal-title">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary)" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-              Manual Trade Confirmation
+              Manual Confirmation
             </h3>
           </header>
           <div class="modal-body">
             <p id="advisor-prompt-text">The bot triggers a buy signal in BTC/USD.</p>
-            <div class="glass-panel" style="padding: 16px; margin-top: 12px; display: flex; justify-content: space-between; align-items: center;">
+            <div style="padding: var(--spacing-sm); margin-top: 12px; display: flex; justify-content: space-between; align-items: center; border: 1px solid var(--border-light); background: var(--bg-primary); border-radius: 12px;">
               <div>
-                <span class="stat-label" style="display: block;">Asset & Qty</span>
-                <strong id="advisor-modal-shares" style="font-size: 1.1rem; font-family: var(--font-mono);">0.00 BTC/USD</strong>
+                <span class="stat-label" style="display: block; font-size:11px;">Asset & Qty</span>
+                <strong id="advisor-modal-shares" style="font-size: 15px; font-family: var(--font-mono); color: var(--text-main);">0.00 BTC/USD</strong>
               </div>
               <div style="text-align: right;">
-                <span class="stat-label" style="display: block;">Trigger Price</span>
-                <strong id="advisor-modal-price" style="font-size: 1.1rem; font-family: var(--font-mono); color: var(--color-primary);">$0.00</strong>
+                <span class="stat-label" style="display: block; font-size:11px;">Trigger Price</span>
+                <strong id="advisor-modal-price" style="font-size: 15px; font-family: var(--font-mono); color: var(--color-success);">$0.00</strong>
               </div>
             </div>
           </div>
@@ -611,22 +611,55 @@ export class Dashboard {
       const isChartActive = asset.symbol === activeSymbol;
       const isBotActive = activeBots.get(asset.symbol) || false;
       
+      const changePct = ((price - asset.defaultPrice) / asset.defaultPrice) * 100;
+      const changeText = `${changePct >= 0 ? '+' : ''}${changePct.toFixed(2)}%`;
+      const changeClass = changePct >= 0 ? 'positive' : 'negative';
+
+      let logo = '📈';
+      if (asset.symbol === 'BTC/USD') logo = '₿';
+      else if (asset.symbol === 'ETH/USD') logo = 'Ξ';
+      else if (asset.symbol === 'SOL/USD') logo = '◎';
+      else if (asset.symbol === 'DOGE/USD') logo = 'Ð';
+      else if (asset.symbol === 'LTC/USD') logo = 'Ł';
+      else if (asset.symbol === 'AAPL') logo = '';
+      else if (asset.symbol === 'TSLA') logo = '⚡';
+      else if (asset.symbol === 'NVDA') logo = '🟢';
+      else if (asset.symbol === 'MSFT') logo = '❖';
+      else if (asset.symbol === 'GOOGL') logo = 'G';
+
+      const sparkColor = changePct >= 0 ? '#22C55E' : '#EF4444';
+      const sparkPath = changePct >= 0
+        ? 'M0,14 Q8,2 14,10 T24,3 T34,8 T44,2'
+        : 'M0,2 Q8,14 14,6 T24,15 T34,8 T44,14';
+      const sparklineSvg = `
+        <svg width="45" height="16" viewBox="0 0 45 16" fill="none" style="margin-right: 8px; opacity:0.85;">
+          <path d="${sparkPath}" stroke="${sparkColor}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      `;
+
       return `
         <tr class="watchlist-row ${isChartActive ? 'active' : ''}" data-symbol="${asset.symbol}">
           <td>
-            <div class="ticker-info">
-              <span class="ticker-symbol">${asset.symbol}</span>
-              <span class="ticker-name">${asset.name}</span>
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <div style="width: 24px; height: 24px; border-radius: 6px; background: rgba(255,255,255,0.03); border: 1px solid var(--border-light); display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; color: var(--color-primary);">${logo}</div>
+              <div class="ticker-info">
+                <span class="ticker-symbol">${asset.symbol}</span>
+                <span class="ticker-name">${asset.name.split(' ')[0]}</span>
+              </div>
             </div>
           </td>
+          <td style="text-align: right;">
+            ${sparklineSvg}
+          </td>
           <td>
-            <div class="ticker-price">$${price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+            <div class="ticker-price">$${price.toLocaleString('en-US', { minimumFractionDigits: price < 1 ? 4 : 2, maximumFractionDigits: price < 1 ? 4 : 2 })}</div>
+            <div class="stat-change ${changeClass}" style="font-size:11px; justify-content: flex-end; margin-top:2px;">${changeText}</div>
           </td>
           <td>
             <div class="ticker-change-badge">
               <span class="ticker-status">
                 <span class="bot-dot ${isBotActive ? 'active' : ''}"></span>
-                <span style="font-size:0.65rem; color:var(--text-muted);">${isBotActive ? 'BOT' : 'OFF'}</span>
+                <span style="font-size:11px; color:var(--text-muted);">${isBotActive ? 'BOT' : 'OFF'}</span>
               </span>
             </div>
           </td>
