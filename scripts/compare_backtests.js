@@ -106,7 +106,6 @@ async function main() {
     let price = 50000;
     let time = Math.floor(Date.now() / 1000) - 500 * 24 * 3600;
     
-    // Generate synthetic trend with random walk noise
     for (let i = 0; i < 500; i++) {
       const change = price * (0.0003 + 0.018 * (Math.random() - 0.49)); // positive drift
       price += change;
@@ -133,6 +132,7 @@ async function main() {
   let v1_trades = 0;
   let v1_wins = 0;
   let v1_entry = 0;
+  let v1_history = [];
 
   for (let i = 120; i < candles.length; i++) {
     const slice = candles.slice(0, i + 1);
@@ -161,6 +161,8 @@ async function main() {
       v1_trades++;
       if (price > v1_entry) v1_wins++;
     }
+    
+    v1_history.push(v1_cash + v1_holdings * price);
   }
   const v1_final_equity = v1_cash + v1_holdings * candles[candles.length - 1].close;
 
@@ -175,6 +177,7 @@ async function main() {
   let v2_trades = 0;
   let v2_wins = 0;
   let v2_entry = 0;
+  let v2_history = [];
 
   for (let i = 120; i < candles.length; i++) {
     const slice = candles.slice(0, i + 1);
@@ -232,6 +235,8 @@ async function main() {
       v2_trades++;
       if (price > v2_entry) v2_wins++;
     }
+    
+    v2_history.push(v2_cash + v2_holdings * price);
   }
   const v2_final_equity = v2_cash + v2_holdings * candles[candles.length - 1].close;
 
@@ -253,6 +258,83 @@ async function main() {
   console.log(`| Strategy Win Rate (%)        | ${v1_winrate.toFixed(1)}%              | ${v2_winrate.toFixed(1)}%              |`);
   console.log(`| Parameter Swaps Triggered    | ${v1_swaps}                 | ${v2_swaps}                  |`);
   console.log("+------------------------------+--------------------+--------------------+");
+
+  // ---------------------------------------------------------
+  // GENERATE HIGH-FIDELITY SVG CHART
+  // ---------------------------------------------------------
+  const width = 800;
+  const height = 400;
+  const padding = 60;
+
+  const minV = Math.min(...v1_history, ...v2_history) * 0.98;
+  const maxV = Math.max(...v1_history, ...v2_history) * 1.02;
+
+  const pointsV1 = v1_history.map((eq, idx) => {
+    const x = padding + (idx / (v1_history.length - 1)) * (width - 2 * padding);
+    const y = height - padding - ((eq - minV) / (maxV - minV)) * (height - 2 * padding);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+
+  const pointsV2 = v2_history.map((eq, idx) => {
+    const x = padding + (idx / (v2_history.length - 1)) * (width - 2 * padding);
+    const y = height - padding - ((eq - minV) / (maxV - minV)) * (height - 2 * padding);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+
+  let gridY = '';
+  const stepGrid = 500;
+  for (let val = Math.ceil(minV / stepGrid) * stepGrid; val <= maxV; val += stepGrid) {
+    const y = height - padding - ((val - minV) / (maxV - minV)) * (height - 2 * padding);
+    gridY += `
+      <line x1="${padding}" y1="${y}" x2="${width - padding}" y2="${y}" stroke="rgba(255,255,255,0.06)" stroke-width="1"/>
+      <text x="${padding - 12}" y="${y + 4}" fill="#71717A" font-family="sans-serif" font-size="11" text-anchor="end">$${val.toLocaleString()}</text>
+    `;
+  }
+
+  let gridX = '';
+  const numSteps = 5;
+  for (let s = 0; s <= numSteps; s++) {
+    const idx = Math.floor((v1_history.length - 1) * (s / numSteps));
+    const x = padding + (s / numSteps) * (width - 2 * padding);
+    gridX += `
+      <line x1="${x}" y1="${padding}" x2="${x}" y2="${height - padding}" stroke="rgba(255,255,255,0.04)" stroke-dasharray="4,4" stroke-width="1"/>
+      <text x="${x}" y="${height - padding + 20}" fill="#71717A" font-family="sans-serif" font-size="11" text-anchor="middle">Step ${idx}</text>
+    `;
+  }
+
+  const svgContent = `
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">
+      <!-- Dark gradient background matching Vercel/Aegis styles -->
+      <rect width="${width}" height="${height}" fill="#0A0A0B" rx="12" stroke="rgba(255,255,255,0.06)" stroke-width="1"/>
+      
+      <!-- Chart borders -->
+      <rect x="${padding}" y="${padding}" width="${width - 2 * padding}" height="${height - 2 * padding}" fill="none" stroke="rgba(255,255,255,0.1)" stroke-width="1"/>
+      
+      <!-- Grid System -->
+      ${gridY}
+      ${gridX}
+      
+      <!-- Curve V1 (Cyan) -->
+      <polyline points="${pointsV1}" fill="none" stroke="#06B6D4" stroke-width="1.8" opacity="0.6" stroke-linejoin="round"/>
+      
+      <!-- Curve V2 (Emerald) -->
+      <polyline points="${pointsV2}" fill="none" stroke="#10B981" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+      
+      <!-- Title & Legends -->
+      <text x="30" y="32" fill="#FFFFFF" font-family="sans-serif" font-size="15" font-weight="700">Aegis Trader - Equity Curve Performance</text>
+      
+      <!-- Legend Markers -->
+      <rect x="${width - 320}" y="20" width="12" height="12" fill="#06B6D4" rx="2" opacity="0.6"/>
+      <text x="${width - 302}" y="30" fill="#A1A1AA" font-family="sans-serif" font-size="11">V1 (45s Cadence In-Sample)</text>
+      
+      <rect x="${width - 150}" y="20" width="12" height="12" fill="#10B981" rx="2"/>
+      <text x="${width - 132}" y="30" fill="#A1A1AA" font-family="sans-serif" font-size="11">V2 (Gated Walk-F)</text>
+    </svg>
+  `.trim();
+
+  const brainDir = 'C:\\Users\\User\\.gemini\\antigravity\\brain\\565251f7-2734-4b44-8af7-823d96cb4b60';
+  fs.writeFileSync(path.join(brainDir, 'equity_curves.svg'), svgContent, 'utf8');
+  console.log(`[Chart] Generated comparative vector curves at: ${path.join(brainDir, 'equity_curves.svg')}`);
 
   console.log("\n[Conclusion]");
   if (v2_final_equity > v1_final_equity) {
