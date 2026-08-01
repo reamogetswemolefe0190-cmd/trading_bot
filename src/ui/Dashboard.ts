@@ -26,6 +26,7 @@ export class Dashboard {
   private onGenerateReviewHandler: (() => Promise<PerformanceReview>) | null = null;
   private onQuickOrderHandler: ((side: 'BUY' | 'SELL') => void) | null = null;
   private onAltonToggleHandler: ((enabled: boolean) => void) | null = null;
+  private onRollbackAltonHandler: ((symbol: string) => boolean) | null = null;
 
   constructor(containerId: string, _simulator: any) {
     const el = document.getElementById(containerId);
@@ -42,6 +43,7 @@ export class Dashboard {
   bindGenerateReview(cb: () => Promise<PerformanceReview>) { this.onGenerateReviewHandler = cb; }
   bindQuickOrder(cb: (side: 'BUY' | 'SELL') => void) { this.onQuickOrderHandler = cb; }
   bindAltonToggle(cb: (enabled: boolean) => void) { this.onAltonToggleHandler = cb; }
+  bindRollbackAlton(cb: (symbol: string) => boolean) { this.onRollbackAltonHandler = cb; }
 
   // Initial markup mounting
   mount() {
@@ -138,10 +140,13 @@ export class Dashboard {
                     <strong style="color: var(--color-primary); font-size: 13px; font-weight:600; display: block;">Son of Alton Optimizer</strong>
                     <span style="font-size: 11px; color: var(--text-muted);">Enables autonomous real-time parameter tuning</span>
                   </div>
-                  <label class="switch-container">
-                    <input type="checkbox" id="checkbox-alton-toggle" style="opacity: 0; width: 0; height: 0;">
-                    <span class="switch-slider"></span>
-                  </label>
+                  <div style="display: flex; align-items: center; gap: 10px;">
+                    <button id="btn-rollback-alton" class="btn btn-secondary" style="font-size: 11px; padding: 6px 12px; border-radius: 6px; cursor: pointer;">Rollback</button>
+                    <label class="switch-container">
+                      <input type="checkbox" id="checkbox-alton-toggle" style="opacity: 0; width: 0; height: 0;">
+                      <span class="switch-slider"></span>
+                    </label>
+                  </div>
                 </div>
 
                 <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 8px; overflow: hidden;">
@@ -332,6 +337,21 @@ export class Dashboard {
                 <div class="input-group">
                   <label for="input-pos-take-profit">Position Take Profit (%)</label>
                   <input type="number" id="input-pos-take-profit" value="${cachedRisk.positionTakeProfitPct || 5.0}" min="0.5" max="30" step="0.5">
+                </div>
+                <div class="input-group">
+                  <label for="input-gov-drawdown">Max Drawdown Limit (%)</label>
+                  <input type="number" id="input-gov-drawdown" value="${localStorage.getItem('gov_max_drawdown') || '10'}" min="1" max="50">
+                </div>
+                <div class="input-group">
+                  <label for="input-gov-concentration">Max Concentration Limit (%)</label>
+                  <input type="number" id="input-gov-concentration" value="${localStorage.getItem('gov_max_concentration') || '30'}" min="5" max="100">
+                </div>
+                <div class="input-group" style="flex-direction: row; justify-content: space-between; align-items: center; padding: 6px 0;">
+                  <label for="checkbox-gov-freeze" style="margin-bottom: 0;">Manual Override Freeze</label>
+                  <label class="switch-container">
+                    <input type="checkbox" id="checkbox-gov-freeze" ${localStorage.getItem('gov_manual_freeze') === 'true' ? 'checked' : ''} style="opacity: 0; width: 0; height: 0;">
+                    <span class="switch-slider"></span>
+                  </label>
                 </div>
               </div>
 
@@ -550,6 +570,35 @@ export class Dashboard {
       if (this.onAltonToggleHandler) {
         this.onAltonToggleHandler(checkboxAlton.checked);
       }
+    });
+
+    // Rollback button listener
+    document.getElementById('btn-rollback-alton')?.addEventListener('click', () => {
+      this.playChime('alert');
+      if (this.onRollbackAltonHandler) {
+        const success = this.onRollbackAltonHandler(this.activeSymbol);
+        if (success) {
+          alert(`Successfully reverted ${this.activeSymbol} strategy parameters to the previous configuration.`);
+        } else {
+          alert(`Failed to rollback: No previous parameter states found in the stack.`);
+        }
+      }
+    });
+
+    // Risk Governor inputs listeners
+    ['input-gov-drawdown', 'input-gov-concentration'].forEach(id => {
+      document.getElementById(id)?.addEventListener('change', (e) => {
+        const val = (e.target as HTMLInputElement).value;
+        const key = id === 'input-gov-drawdown' ? 'gov_max_drawdown' : 'gov_max_concentration';
+        localStorage.setItem(key, val);
+        this.triggerConfigChange();
+      });
+    });
+
+    const checkboxFreeze = document.getElementById('checkbox-gov-freeze') as HTMLInputElement;
+    checkboxFreeze?.addEventListener('change', () => {
+      localStorage.setItem('gov_manual_freeze', checkboxFreeze.checked ? 'true' : 'false');
+      this.triggerConfigChange();
     });
 
     // Tab buttons switching

@@ -19,6 +19,10 @@ export class SonOfAlton {
   private sentimentScores: Map<string, number> = new Map();
   private headlinesMap: Map<string, string[]> = new Map();
   private baselineMaxPosSizes: Map<string, number> = new Map();
+  private rollingSentimentScores: Map<string, number[]> = new Map();
+
+  // Rollback configuration stack per symbol
+  private configHistoryStack: Map<string, StrategyConfig[]> = new Map();
 
   private positiveKeywords = [
     'bullish', 'upgrade', 'growth', 'beat', 'surge', 'breakout', 
@@ -54,10 +58,13 @@ export class SonOfAlton {
     this.isEnabled = true;
     this.log('info', 'Son of Alton AI Optimizer Enabled. Commencing background audits...');
     
-    // Run optimization sweep every 45 seconds (speedy simulated intervals)
+    // Slow the interval down: read alton_interval_hours from localStorage (default 4)
+    const hours = parseFloat(localStorage.getItem('alton_interval_hours') || '4');
+    const intervalMs = Math.max(10000, hours * 60 * 60 * 1000); 
+    
     this.timerId = setInterval(() => {
       this.runOptimizationSweep();
-    }, 45000);
+    }, intervalMs);
     
     // Run initial sweep immediately
     setTimeout(() => this.runOptimizationSweep(), 2000);
@@ -88,6 +95,18 @@ export class SonOfAlton {
     };
   }
 
+  public rollbackConfiguration(symbol: string): boolean {
+    const stack = this.configHistoryStack.get(symbol);
+    if (!stack || stack.length === 0) {
+      this.log('warn', `Rollback ignored for ${symbol}: Stack is empty.`, symbol);
+      return false;
+    }
+    const previous = stack.pop()!;
+    this.robot.setStrategyConfig(symbol, previous);
+    this.log('ai', `ROLLBACK ENFORCED: Reverted ${symbol} parameters to previous active profile.`, symbol);
+    return true;
+  }
+
   private log(level: LogEntry['level'], message: string, symbol?: string) {
     const entry: LogEntry = {
       timestamp: Date.now(),
@@ -96,7 +115,6 @@ export class SonOfAlton {
       asset: symbol
     };
     
-    // Relay log to robot so it appears in aggregate console logs
     this.robot.log(level, `[AI Optimizer] ${message}`, symbol);
     
     if (this.onLogCallback) {
@@ -126,7 +144,6 @@ export class SonOfAlton {
     return parseFloat(((posCount - negCount) / total).toFixed(2));
   }
 
-  // Audits active bot parameters and updates configurations if a more profitable profile is resolved
   private async runOptimizationSweep() {
     if (!this.isEnabled) return;
     
@@ -140,17 +157,26 @@ export class SonOfAlton {
       const currentConfig = this.robot.getStrategyConfig(symbol);
       const candles = this.simulator.getCandles(symbol);
 
-      // --- Part 1: News Sentiment Fetching & Capital Allocation ---
+      // --- Part 1: NLP News Sentiment Scan ---
       try {
         const headlines = await this.robot.getNews(symbol);
         const score = this.calculateSentiment(headlines);
         
         this.sentimentScores.set(symbol, score);
-        this.headlinesMap.set(symbol, headlines.slice(0, 3)); // Store top 3 headlines
+        this.headlinesMap.set(symbol, headlines.slice(0, 3)); 
+
+        // Rolling sentiment scores calculations (sustained bearish checks)
+        if (!this.rollingSentimentScores.has(symbol)) {
+          this.rollingSentimentScores.set(symbol, []);
+        }
+        const rolling = this.rollingSentimentScores.get(symbol)!;
+        rolling.push(score);
+        if (rolling.length > 3) rolling.shift();
+
+        const avgScore = rolling.reduce((a, b) => a + b, 0) / rolling.length;
 
         const currentRisk = this.robot.getRiskConfig(symbol);
         
-        // Record baseline size if not tracked yet
         if (!this.baselineMaxPosSizes.has(symbol)) {
           this.baselineMaxPosSizes.set(symbol, currentRisk.maxPositionSize);
         }
@@ -158,31 +184,31 @@ export class SonOfAlton {
         const baseline = this.baselineMaxPosSizes.get(symbol)!;
         let originalSize = currentRisk.maxPositionSize;
 
-        if (score > 0.25) {
-          // Bullish: Boost allocation by 1.5x, tighten Stop Loss to 1.5%
-          currentRisk.maxPositionSize = baseline * 1.5;
+        if (avgScore > 0.25) {
+          // Bullish: Boost allocation by 1.2x max (capped as per v2)
+          currentRisk.maxPositionSize = baseline * 1.2;
           currentRisk.positionStopLossPct = 1.5;
           this.robot.setRiskConfig(symbol, currentRisk);
           
           if (originalSize !== currentRisk.maxPositionSize) {
-            this.log('ai', `Sentiment ranking: BULLISH (${score > 0 ? '+' : ''}${score}). Allocation boosted to $${currentRisk.maxPositionSize} for ${symbol}.`, symbol);
+            this.log('ai', `Sentiment ranking: BULLISH (${avgScore.toFixed(2)}). Allocation boosted to $${currentRisk.maxPositionSize} for ${symbol}.`, symbol);
           }
-        } else if (score < -0.25) {
-          // Bearish: Freeze buying allocation to $0 (protecting capital)
+        } else if (avgScore < -0.25) {
+          // Bearish sustained check: Freeze buying allocation to $0
           currentRisk.maxPositionSize = 0;
           this.robot.setRiskConfig(symbol, currentRisk);
           
           if (originalSize !== 0) {
-            this.log('warn', `Sentiment ranking: BEARISH (${score}). BUY orders frozen ($0 allocation) for ${symbol} to protect capital.`, symbol);
+            this.log('warn', `Sentiment ranking: BEARISH (${avgScore.toFixed(2)}). Sustained sell bias halts buying ($0 allocation) for ${symbol}.`, symbol);
           }
         } else {
-          // Neutral: Restore baseline size, default Stop Loss back to 2.0%
+          // Neutral: Restore baseline size
           currentRisk.maxPositionSize = baseline;
           currentRisk.positionStopLossPct = 2.0;
           this.robot.setRiskConfig(symbol, currentRisk);
           
           if (originalSize !== baseline) {
-            this.log('info', `Sentiment ranking: NEUTRAL (${score > 0 ? '+' : ''}${score}). Restored baseline size $${baseline} for ${symbol}.`, symbol);
+            this.log('info', `Sentiment ranking: NEUTRAL (${avgScore.toFixed(2)}). Restored baseline size $${baseline} for ${symbol}.`, symbol);
           }
         }
       } catch (newsErr: any) {
@@ -190,12 +216,7 @@ export class SonOfAlton {
       }
 
       // --- Part 2: Technical Strategy Param Sweeps ---
-      if (candles.length < 30) {
-        this.log('warn', `Audit for ${symbol} skipped: Insufficient candles history (${candles.length}/30).`, symbol);
-        continue;
-      }
-
-      // For ML strategy, trigger background retraining on every AI sweep to keep the model updated with the latest market data
+      // For ML strategy, trigger background retraining
       if (currentConfig.type === 'ml_predict') {
         try {
           const mlUrl = localStorage.getItem('ml_url') || 'http://localhost:5000';
@@ -231,9 +252,33 @@ export class SonOfAlton {
         continue;
       }
 
-      const optResult = ReviewEngine.optimizeParameters(candles, currentConfig);
+      // Out-Of-Sample Validation Split
+      if (candles.length < 500) {
+        this.log('warn', `Audit for ${symbol} skipped: Insufficient candles history (${candles.length}/500 required).`, symbol);
+        continue;
+      }
+
+      // Calculate dynamic volatility proxy
+      let sumChanges = 0;
+      const checkWindow = Math.min(20, candles.length - 1);
+      for (let i = candles.length - checkWindow; i < candles.length; i++) {
+        if (i > 0) {
+          sumChanges += Math.abs(candles[i].close - candles[i-1].close) / candles[i-1].close;
+        }
+      }
+      const volProxy = (sumChanges / checkWindow) * 100;
       
-      // Determine if parameters need updates
+      // Volatility scales OOS portion from 20% to 40%
+      const oosRatio = 0.20 + Math.min(0.20, volProxy * 0.15); 
+      const oosCount = Math.floor(candles.length * oosRatio);
+      const inSampleCount = candles.length - oosCount;
+      
+      const inSampleCandles = candles.slice(0, inSampleCount);
+      const outOfSampleCandles = candles.slice(inSampleCount);
+
+      // Perform grid-search optimize parameters on the in-sample window
+      const optResult = ReviewEngine.optimizeParameters(inSampleCandles, currentConfig);
+      
       let isDiff = false;
       const params = currentConfig.parameters as any;
       const optParams = optResult.optimalParams as any;
@@ -245,8 +290,8 @@ export class SonOfAlton {
       });
 
       if (isDiff && Object.keys(optParams).length > 0) {
-        // Construct updated configuration profile
-        const updatedConfig: StrategyConfig = {
+        // Construct candidate config
+        const candidateConfig: StrategyConfig = {
           type: currentConfig.type,
           parameters: {
             ...currentConfig.parameters,
@@ -254,18 +299,46 @@ export class SonOfAlton {
           }
         };
 
-        const oldParamsStr = Object.keys(optParams).map(k => `${k}: ${params[k]}`).join(', ');
-        const newParamsStr = Object.keys(optParams).map(k => `${k}: ${optParams[k]}`).join(', ');
+        // Evaluate candidate outperformance on both windows
+        const currentInSample = ReviewEngine.runMockBacktest(inSampleCandles, 10000, currentConfig);
+        const candidateInSample = ReviewEngine.runMockBacktest(inSampleCandles, 10000, candidateConfig);
 
-        this.log(
-          'ai', 
-          `AUTO-RECALIBRATION: Parameter drift corrected in ${symbol}. Reprogrammed settings from {${oldParamsStr}} to {${newParamsStr}}.`, 
-          symbol
-        );
+        const currentOos = ReviewEngine.runMockBacktestWithTradeCount(outOfSampleCandles, 10000, currentConfig);
+        const candidateOos = ReviewEngine.runMockBacktestWithTradeCount(outOfSampleCandles, 10000, candidateConfig);
 
-        this.robot.setStrategyConfig(symbol, updatedConfig);
-        this.optimizedActionsCount++;
-        actionsTakenText.push(`- **${symbol}**: Tuned settings from \`{${oldParamsStr}}\` to \`{${newParamsStr}}\` based on historical price sweep.`);
+        // Validation gate
+        if (candidateInSample > currentInSample && 
+            candidateOos.equity > currentOos.equity && 
+            candidateOos.tradeCount >= 3) {
+          
+          // Save in rollback stack before swapping
+          if (!this.configHistoryStack.has(symbol)) {
+            this.configHistoryStack.set(symbol, []);
+          }
+          this.configHistoryStack.get(symbol)!.push({
+            type: currentConfig.type,
+            parameters: { ...currentConfig.parameters }
+          });
+
+          const oldParamsStr = Object.keys(optParams).map(k => `${k}: ${params[k]}`).join(', ');
+          const newParamsStr = Object.keys(optParams).map(k => `${k}: ${optParams[k]}`).join(', ');
+
+          this.log(
+            'ai', 
+            `VALIDATION PASS: Walk-Forward swap approved for ${symbol}. In-Sample (Current: $${currentInSample.toFixed(2)}, Opt: $${candidateInSample.toFixed(2)}) | Out-of-Sample (Current: $${currentOos.equity.toFixed(2)}, Opt: $${candidateOos.equity.toFixed(2)} | Trades: ${candidateOos.tradeCount}). Swap active.`, 
+            symbol
+          );
+
+          this.robot.setStrategyConfig(symbol, candidateConfig);
+          this.optimizedActionsCount++;
+          actionsTakenText.push(`- **${symbol}**: Tuned settings from \`{${oldParamsStr}}\` to \`{${newParamsStr}}\` after passing walk-forward gates.`);
+        } else {
+          this.log(
+            'info',
+            `VALIDATION FAIL: Candidate config for ${symbol} failed validation gate. In-Sample Opt: $${candidateInSample.toFixed(2)} vs Active: $${currentInSample.toFixed(2)} | Out-of-Sample Opt: $${candidateOos.equity.toFixed(2)} vs Active: $${currentOos.equity.toFixed(2)} (Trades: ${candidateOos.tradeCount}). Swap blocked.`,
+            symbol
+          );
+        }
       }
     }
 

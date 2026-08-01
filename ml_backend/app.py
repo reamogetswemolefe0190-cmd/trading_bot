@@ -196,13 +196,26 @@ def train():
         
         # Train model
         model = RandomForestClassifier(n_estimators=100, max_depth=5, random_state=42)
+        
+        # Run 5-fold cross-validation before deploying
+        from sklearn.model_selection import cross_val_score
+        cv_scores = cross_val_score(model, X, y, cv=5)
+        mean_cv_acc = float(np.mean(cv_scores))
+        
+        if mean_cv_acc < 0.48: # Allow slightly below 0.5 to prevent lockouts on neutral/flat mock data
+            return jsonify({
+                "status": "rejected",
+                "error": f"Validation Gate Rejected: Retrained model failed 5-fold cross-validation (accuracy: {mean_cv_acc:.3f} vs min threshold 0.480)."
+            }), 422
+
+        # Fit model on full training window
         model.fit(X, y)
         
         # Save model file
         model_path = os.path.join(MODEL_DIR, f"{symbol.replace('/', '_')}_rf.pkl")
         joblib.dump(model, model_path)
         
-        # Calculate training win accuracy (dummy check)
+        # Calculate training accuracy
         train_acc = model.score(X, y)
         
         return jsonify({
@@ -210,6 +223,7 @@ def train():
             "message": f"Trained RandomForest model for {symbol}.",
             "features_used": features,
             "training_accuracy": float(train_acc),
+            "cross_val_accuracy": mean_cv_acc,
             "model_saved_at": model_path
         })
         

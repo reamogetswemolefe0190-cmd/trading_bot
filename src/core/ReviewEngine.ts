@@ -172,7 +172,7 @@ export class ReviewEngine {
   }
 
   // Fast backtester helper that simulates a simple strategy on historical data
-  private static runMockBacktest(candles: Candle[], initialEquity: number, config: StrategyConfig): number {
+  static runMockBacktest(candles: Candle[], initialEquity: number, config: StrategyConfig): number {
     let cash = initialEquity;
     let holdings = 0;
 
@@ -235,6 +235,42 @@ export class ReviewEngine {
       ...stats,
       recommendations,
       optimalParams: optimization.optimalParams
+    };
+  }
+
+  // Runs a backtest returning both final equity and trade count
+  static runMockBacktestWithTradeCount(
+    candles: Candle[],
+    initialEquity: number,
+    config: StrategyConfig
+  ): { equity: number; tradeCount: number } {
+    let cash = initialEquity;
+    let holdings = 0;
+    let tradeCount = 0;
+
+    for (let i = 15; i < candles.length; i++) {
+      const slice = candles.slice(0, i + 1);
+      const signal = Strategies.evaluate(slice, config);
+      const price = candles[i].close;
+
+      if (signal === 'BUY' && holdings === 0) {
+        const commission = cash * 0.001;
+        holdings = (cash - commission) / price;
+        cash = 0;
+        tradeCount++;
+      } else if (signal === 'SELL' && holdings > 0) {
+        const value = holdings * price;
+        const commission = value * 0.001;
+        cash = value - commission;
+        holdings = 0;
+        tradeCount++;
+      }
+    }
+
+    const finalPrice = candles[candles.length - 1].close;
+    return {
+      equity: cash + holdings * finalPrice,
+      tradeCount
     };
   }
 }

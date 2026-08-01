@@ -171,6 +171,9 @@ async function bootstrap() {
     // B. Save risk controls specifically for the active symbol
     robot.setRiskConfig(symbol, riskConfig);
 
+    // Sync Risk Governor config from localStorage
+    robot.getRiskGovernor().loadConfig();
+
     // C. Save strategy settings specifically for the active symbol
     robot.setStrategyConfig(symbol, strategyConfig);
 
@@ -212,10 +215,21 @@ async function bootstrap() {
     }
   });
 
+  dashboard.bindRollbackAlton((symbol) => {
+    const success = alton.rollbackConfiguration(symbol);
+    if (success) {
+      const strategy = robot.getStrategyConfig(symbol);
+      const risk = robot.getRiskConfig(symbol);
+      dashboard.setConfigs(strategy, risk, symbol);
+      updateStatsAndChart(true);
+    }
+    return success;
+  });
+
   // 7. Warm up Simulator History for all watchlist assets
   robot.log('info', 'Warm-up: Fetching market history for watchlist assets...');
   for (const asset of Simulator.assets) {
-    await simulator.loadHistoricalDataForSymbol(asset.symbol, 60);
+    await simulator.loadHistoricalDataForSymbol(asset.symbol, 600);
   }
 
   // Draw chart with current symbol history

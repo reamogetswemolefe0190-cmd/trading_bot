@@ -177,7 +177,7 @@ export class Simulator {
     if (mode === 'live') {
       // Warm up all assets with historical data first in parallel
       const promises = Simulator.assets.map(async (asset) => {
-        const history = await this.loadHistoricalDataForSymbol(asset.symbol, 60);
+        const history = await this.loadHistoricalDataForSymbol(asset.symbol, 600);
         this.activeCandlesMap.set(asset.symbol, [...history]);
         if (history.length > 0) {
           this.activePriceMap.set(asset.symbol, history[history.length - 1].close);

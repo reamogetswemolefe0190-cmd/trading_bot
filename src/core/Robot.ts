@@ -11,10 +11,13 @@ import {
 } from './Types';
 import { Strategies } from './Strategies';
 import { ReviewEngine } from './ReviewEngine';
+import { RiskGovernor } from './RiskGovernor';
 
 export class Robot {
   private simulator: Simulator;
   private broker: IBroker;
+  private riskGovernor: RiskGovernor = new RiskGovernor();
+  private positionExitTargets: Map<string, { stopLossPrice: number; takeProfitPrice: number }> = new Map();
 
   // Multi-asset registries
   private activeStrategyConfigs: Map<string, StrategyConfig> = new Map();
@@ -99,6 +102,10 @@ export class Robot {
       risk.dailyStopLossPct = config.dailyStopLossPct;
       this.activeRiskConfigs.set(sym, risk);
     }
+
+    this.riskGovernor.updateConfig({
+      maxDailyLossPct: config.dailyStopLossPct
+    });
     
     this.log('info', `Global risk limits updated. Mode: ${config.executionMode.toUpperCase()} | Max Positions: ${config.maxPositions} | Daily SL: ${config.dailyStopLossPct}%`, symbol);
   }
@@ -286,13 +293,24 @@ export class Robot {
   private async checkPositionRiskLimits(symbol: string, price: number) {
     if (this.activeRiskPrompts.has(symbol)) return;
 
+    const assetRisk = this.activeRiskConfigs.get(symbol) || Array.from(this.activeRiskConfigs.values())[0];
     const activePosition = this.positionsCache.find(p => p.asset === symbol);
 
-    if (!activePosition || activePosition.quantity <= 0) return;
+    if (!activePosition || activePosition.quantity <= 0) {
+      this.positionExitTargets.delete(symbol);
+      return;
+    }
 
-    const assetRisk = this.activeRiskConfigs.get(symbol) || Array.from(this.activeRiskConfigs.values())[0];
-    const stopLossTriggerPrice = activePosition.averagePrice * (1 - assetRisk.positionStopLossPct / 100);
-    const takeProfitTriggerPrice = activePosition.averagePrice * (1 + assetRisk.positionTakeProfitPct / 100);
+    let targets = this.positionExitTargets.get(symbol);
+    if (!targets) {
+      const stopPrice = activePosition.averagePrice * (1 - assetRisk.positionStopLossPct / 100);
+      const limitPrice = activePosition.averagePrice * (1 + assetRisk.positionTakeProfitPct / 100);
+      targets = { stopLossPrice: stopPrice, takeProfitPrice: limitPrice };
+      this.positionExitTargets.set(symbol, targets);
+    }
+
+    const stopLossTriggerPrice = targets.stopLossPrice;
+    const takeProfitTriggerPrice = targets.takeProfitPrice;
 
     if (price <= stopLossTriggerPrice) {
       this.activeRiskPrompts.add(symbol);
@@ -320,6 +338,30 @@ export class Robot {
   }
 
   private async executeOrder(symbol: string, side: 'BUY' | 'SELL', qty: number, price: number) {
+    // Sync active positions cache first
+    await this.refreshPositionsCache();
+    
+    // Query balance to calculate metrics
+    const balance = await this.broker.getAccountBalance();
+    
+    // Track daily starting and current equity
+    this.riskGovernor.recordEquity(balance.equity);
+    
+    // Evaluate via Risk Governor validation gate
+    const validation = this.riskGovernor.evaluateOrder(
+      symbol,
+      side,
+      qty,
+      price,
+      balance.equity,
+      this.positionsCache
+    );
+
+    if (!validation.allowed) {
+      this.log('error', `ORDER REJECTED: ${validation.reason}`, symbol);
+      throw new Error(`Order blocked by Risk Governor: ${validation.reason}`);
+    }
+
     this.log('info', `Placing ${side} order: ${qty} ${symbol} at $${price.toFixed(2)}...`, symbol);
     const trade = await this.broker.placeOrder(symbol, side, qty, price);
     
@@ -330,6 +372,17 @@ export class Robot {
     );
 
     if (this.onTradeCallback) this.onTradeCallback(trade);
+    
+    // Cache exit targets if BUY order was successful
+    if (side === 'BUY') {
+      const risk = this.getRiskConfig(symbol);
+      const stopPrice = trade.price * (1 - risk.positionStopLossPct / 100);
+      const limitPrice = trade.price * (1 + risk.positionTakeProfitPct / 100);
+      this.positionExitTargets.set(symbol, { stopLossPrice: stopPrice, takeProfitPrice: limitPrice });
+    } else {
+      this.positionExitTargets.delete(symbol);
+    }
+
     await this.refreshPositionsCache(); // Sync cache immediately after order is executed
     if (this.onUpdateCallback) this.onUpdateCallback(symbol, false);
   }
@@ -534,5 +587,9 @@ export class Robot {
   // Expose news scanning capability to external calibrators safely
   async getNews(symbol: string): Promise<string[]> {
     return this.broker.getNews(symbol);
+  }
+
+  getRiskGovernor(): RiskGovernor {
+    return this.riskGovernor;
   }
 }
