@@ -37,26 +37,87 @@ def compute_features(df):
     df = df.fillna(method='bfill').fillna(0)
     return df
 
+# Helper: Fetch historical daily candles directly from Alpaca API
+def fetch_candles_from_alpaca(symbol, days, api_key, api_secret):
+    import datetime
+    import urllib.request
+    
+    end_time = datetime.datetime.utcnow()
+    start_time = end_time - datetime.timedelta(days=days)
+    
+    # Format dates to Alpaca expectations (ISO strings with Z)
+    start_iso = start_time.isoformat() + 'Z'
+    end_iso = end_time.isoformat() + 'Z'
+    
+    is_crypto = '/' in symbol or 'BTC' in symbol or 'ETH' in symbol
+    
+    if is_crypto:
+        formatted_sym = symbol.replace('/', '')
+        url = f"https://data.alpaca.markets/v1beta3/crypto/us/bars?symbols={formatted_sym}&timeframe=1Day&start={start_iso}&end={end_iso}&limit=1000"
+    else:
+        url = f"https://data.alpaca.markets/v2/stocks/{symbol}/bars?timeframe=1Day&start={start_iso}&end={end_iso}&limit=1000&adjustment=raw"
+        
+    req = urllib.request.Request(url)
+    req.add_header('APCA-API-KEY-ID', api_key)
+    req.add_header('APCA-API-SECRET-KEY', api_secret)
+    
+    with urllib.request.urlopen(req) as response:
+        res_data = json.loads(response.read().decode())
+        
+    bars = []
+    if is_crypto:
+        formatted_sym = symbol.replace('/', '')
+        bars = res_data.get('bars', {}).get(formatted_sym, [])
+    else:
+        bars = res_data.get('bars', [])
+        
+    formatted_data = []
+    for b in bars:
+        formatted_data.append({
+            'time': b['t'].split('T')[0],
+            'open': b['o'],
+            'high': b['h'],
+            'low': b['l'],
+            'close': b['c'],
+            'volume': b['v']
+        })
+        
+    return formatted_data
+
 @app.route('/train', methods=['POST'])
 def train():
     """
-    Trains a RandomForest model on a historical candles JSON file
+    Trains a RandomForest model dynamically from Alpaca or a historical candles file
     """
     req_data = request.get_json()
-    if not req_data or 'filepath' not in req_data or 'symbol' not in req_data:
-        return jsonify({"error": "Missing filepath or symbol in request body"}), 400
+    if not req_data or 'symbol' not in req_data:
+        return jsonify({"error": "Missing symbol in request body"}), 400
         
-    filepath = req_data['filepath']
     symbol = req_data['symbol']
+    api_key = req_data.get('apiKey')
+    api_secret = req_data.get('apiSecret')
     
-    if not os.path.exists(filepath):
-        return jsonify({"error": f"File not found: {filepath}"}), 404
-        
-    try:
-        # Load JSON candles history
-        with open(filepath, 'r') as f:
-            candles = json.load(f)
+    candles = []
+    if api_key and api_secret:
+        try:
+            candles = fetch_candles_from_alpaca(symbol, 365, api_key, api_secret)
+        except Exception as fetch_err:
+            return jsonify({"error": f"Failed to fetch historical data from Alpaca: {str(fetch_err)}"}), 500
+    else:
+        filepath = req_data.get('filepath')
+        if not filepath:
+            return jsonify({"error": "Missing filepath or Alpaca API keys to retrieve history"}), 400
             
+        if not os.path.exists(filepath):
+            return jsonify({"error": f"File not found: {filepath}"}), 404
+            
+        try:
+            with open(filepath, 'r') as f:
+                candles = json.load(f)
+        except Exception as file_err:
+            return jsonify({"error": f"Failed to read history file: {str(file_err)}"}), 500
+
+    try:
         df = pd.DataFrame(candles)
         if len(df) < 50:
             return jsonify({"error": "Insufficient candles to train model (minimum 50 required)"}), 400

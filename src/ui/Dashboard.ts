@@ -843,6 +843,9 @@ export class Dashboard {
           const filepath = `data/history/${cleanSym}_history.json`;
           
           const mlUrl = localStorage.getItem('ml_url') || 'http://localhost:5000';
+          const apiKey = (document.getElementById('input-api-key') as HTMLInputElement)?.value || '';
+          const apiSecret = (document.getElementById('input-api-secret') as HTMLInputElement)?.value || '';
+
           const res = await fetch(`${mlUrl}/train`, {
             method: 'POST',
             headers: {
@@ -850,7 +853,9 @@ export class Dashboard {
             },
             body: JSON.stringify({
               symbol: sym,
-              filepath: filepath
+              filepath: filepath,
+              apiKey: apiKey,
+              apiSecret: apiSecret
             })
           });
           
