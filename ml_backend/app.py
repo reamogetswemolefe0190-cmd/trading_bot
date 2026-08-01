@@ -34,7 +34,7 @@ def compute_features(df):
     df['rsi_14'] = 100 - (100 / (1 + rs))
     
     # Fill NaN values caused by rolling windows
-    df = df.fillna(method='bfill').fillna(0)
+    df = df.bfill().fillna(0)
     return df
 
 # Helper: Fetch historical daily candles directly from Alpaca API
