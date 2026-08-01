@@ -195,8 +195,39 @@ export class SonOfAlton {
         continue;
       }
 
-      // Skip optimization sweeps for ML strategy since it runs on Python server
+      // For ML strategy, trigger background retraining on every AI sweep to keep the model updated with the latest market data
       if (currentConfig.type === 'ml_predict') {
+        try {
+          const mlUrl = localStorage.getItem('ml_url') || 'http://localhost:5000';
+          const cachedBrokerStr = localStorage.getItem('aegis_broker');
+          const apiKey = cachedBrokerStr ? JSON.parse(cachedBrokerStr).apiKey : '';
+          const apiSecret = cachedBrokerStr ? JSON.parse(cachedBrokerStr).apiSecret : '';
+          const cleanSym = symbol.replace('/', '_');
+          const filepath = `data/history/${cleanSym}_history.json`;
+
+          this.log('info', `Son of Alton triggering background ML retraining for ${symbol}...`, symbol);
+
+          const res = await fetch(`${mlUrl}/train`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              symbol: symbol,
+              filepath: filepath,
+              apiKey: apiKey,
+              apiSecret: apiSecret
+            })
+          });
+          const data = await res.json();
+          if (res.ok) {
+            this.log('ai', `AUTONOMOUS ML TRAINING SUCCESS: Model for ${symbol} recalibrated. Accuracy: ${(data.training_accuracy * 100).toFixed(1)}%`, symbol);
+          } else {
+            this.log('warn', `Autonomous ML training failed: ${data.error}`, symbol);
+          }
+        } catch (trainErr: any) {
+          console.warn(`[SonOfAlton] ML auto-training sweep failed:`, trainErr.message);
+        }
         continue;
       }
 

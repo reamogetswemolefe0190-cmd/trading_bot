@@ -366,7 +366,12 @@ export class Robot {
     // Process candles chronologically
     for (let i = 15; i < history.length; i++) {
       const slice = history.slice(0, i + 1);
-      const signal = Strategies.evaluate(slice, activeConfig);
+      let signal: 'BUY' | 'SELL' | 'HOLD' = 'HOLD';
+      if (activeConfig.type === 'ml_predict') {
+        signal = await this.queryMLPredictor(symbol, slice);
+      } else {
+        signal = Strategies.evaluate(slice, activeConfig);
+      }
       const price = history[i].close;
       
       const currentEquity = cash + holdings * price;
