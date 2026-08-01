@@ -41,13 +41,14 @@ def compute_features(df):
 def fetch_candles_from_alpaca(symbol, days, api_key, api_secret):
     import datetime
     import urllib.request
+    import urllib.error
     
     end_time = datetime.datetime.utcnow()
     start_time = end_time - datetime.timedelta(days=days)
     
-    # Format dates to Alpaca expectations (ISO strings with Z)
-    start_iso = start_time.isoformat() + 'Z'
-    end_iso = end_time.isoformat() + 'Z'
+    # Format dates strictly to RFC3339 second-precision (Alpaca rejects microsecond decimals)
+    start_iso = start_time.strftime('%Y-%m-%dT%H:%M:%SZ')
+    end_iso = end_time.strftime('%Y-%m-%dT%H:%M:%SZ')
     
     is_crypto = '/' in symbol or 'BTC' in symbol or 'ETH' in symbol
     
@@ -61,8 +62,12 @@ def fetch_candles_from_alpaca(symbol, days, api_key, api_secret):
     req.add_header('APCA-API-KEY-ID', api_key)
     req.add_header('APCA-API-SECRET-KEY', api_secret)
     
-    with urllib.request.urlopen(req) as response:
-        res_data = json.loads(response.read().decode())
+    try:
+        with urllib.request.urlopen(req) as response:
+            res_data = json.loads(response.read().decode())
+    except urllib.error.HTTPError as http_err:
+        err_body = http_err.read().decode()
+        raise Exception(f"Alpaca API returned {http_err.code}: {err_body}")
         
     bars = []
     if is_crypto:
