@@ -237,9 +237,17 @@ export class Robot {
       }
 
       // Quantity calculation based on Max Position Size limit
+      if (assetRisk.maxPositionSize <= 0) {
+        this.log('warn', `Signal BUY in ${symbol} ignored: Buying is currently halted by AI Optimizer (Allocation set to $0).`, symbol);
+        return;
+      }
       const orderValue = Math.min(balance.cash, assetRisk.maxPositionSize);
       if (orderValue < 10) {
-        this.log('warn', `Signal BUY in ${symbol} ignored: Insufficient cash balance (Available: $${balance.cash.toFixed(2)}).`, symbol);
+        if (balance.cash < 10) {
+          this.log('warn', `Signal BUY in ${symbol} ignored: Insufficient cash balance (Available: $${balance.cash.toFixed(2)}).`, symbol);
+        } else {
+          this.log('warn', `Signal BUY in ${symbol} ignored: Max order allocation is too small ($${assetRisk.maxPositionSize.toFixed(2)}).`, symbol);
+        }
         return;
       }
       const qty = parseFloat((orderValue / price).toFixed(4));
