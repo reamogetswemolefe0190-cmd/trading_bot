@@ -53,8 +53,12 @@ def fetch_candles_from_alpaca(symbol, days, api_key, api_secret):
     is_crypto = '/' in symbol or 'BTC' in symbol or 'ETH' in symbol
     
     if is_crypto:
-        formatted_sym = symbol.replace('/', '')
-        url = f"https://data.alpaca.markets/v1beta3/crypto/us/bars?symbols={formatted_sym}&timeframe=1Day&start={start_iso}&end={end_iso}&limit=1000"
+        # Alpaca v1beta3 Crypto API requires the slash in the symbol name (e.g. BTC/USD)
+        formatted_sym = symbol.replace('_', '/')
+        if '/' not in formatted_sym:
+            formatted_sym = formatted_sym[:3] + '/' + formatted_sym[3:]
+        encoded_sym = formatted_sym.replace('/', '%2F')
+        url = f"https://data.alpaca.markets/v1beta3/crypto/us/bars?symbols={encoded_sym}&timeframe=1Day&start={start_iso}&end={end_iso}&limit=1000"
     else:
         url = f"https://data.alpaca.markets/v2/stocks/{symbol}/bars?timeframe=1Day&start={start_iso}&end={end_iso}&limit=1000&adjustment=raw"
         
@@ -71,7 +75,10 @@ def fetch_candles_from_alpaca(symbol, days, api_key, api_secret):
         
     bars = []
     if is_crypto:
-        formatted_sym = symbol.replace('/', '')
+        # Restore standard symbol with slash to extract from JSON response
+        formatted_sym = symbol.replace('_', '/')
+        if '/' not in formatted_sym:
+            formatted_sym = formatted_sym[:3] + '/' + formatted_sym[3:]
         bars = res_data.get('bars', {}).get(formatted_sym, [])
     else:
         bars = res_data.get('bars', [])
