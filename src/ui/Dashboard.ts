@@ -216,7 +216,7 @@ export class Dashboard {
               </div>
 
               <!-- Trade Ledger List -->
-              <div class="config-section" style="flex: 1; display: flex; flex-direction: column; overflow: hidden; padding: var(--spacing-sm);">
+              <div class="config-section" style="flex: 1; display: flex; flex-direction: column; overflow: hidden; padding: var(--spacing-sm); min-height: 200px;">
                 <span class="stat-label" style="font-size:11px; margin-bottom:8px; display:block;">Recent Trade Executions</span>
                 <div class="data-table-wrapper" style="flex: 1; overflow-y: auto;">
                   <table class="data-table">
@@ -236,6 +236,14 @@ export class Dashboard {
                       <tr><td colspan="8" style="text-align: center; color: var(--text-muted); padding: 20px;">No trades executed in this session.</td></tr>
                     </tbody>
                   </table>
+                </div>
+              </div>
+
+              <!-- System Console Terminal -->
+              <div class="config-section" style="flex: 1; display: flex; flex-direction: column; overflow: hidden; padding: var(--spacing-sm); min-height: 220px;">
+                <span class="stat-label" style="font-size:11px; margin-bottom:8px; display:block;">System Console Terminal</span>
+                <div id="terminal-log" class="log-viewer" style="flex: 1; overflow-y: auto;">
+                  <div class="log-entry"><span class="log-time">[System]</span> <span class="log-level info">INFO</span> <span class="log-msg">Aegis Terminal Initialized. Ready.</span></div>
                 </div>
               </div>
             </div>
