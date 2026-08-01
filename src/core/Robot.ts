@@ -496,7 +496,8 @@ export class Robot {
     try {
       // Send the last 50 candles to fit feature expectations of ML backend
       const recent = candles.slice(-50);
-      const res = await fetch('http://localhost:5000/predict', {
+      const mlUrl = localStorage.getItem('ml_url') || 'http://localhost:5000';
+      const res = await fetch(`${mlUrl}/predict`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'

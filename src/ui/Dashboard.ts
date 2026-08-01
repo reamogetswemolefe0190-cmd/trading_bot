@@ -789,11 +789,15 @@ export class Dashboard {
       `;
     } else if (config.type === 'ml_predict') {
       html = `
-        <div class="input-group" style="padding: 12px; background: rgba(56, 189, 248, 0.05); border: 1px dashed var(--color-primary); border-radius: 8px;">
-          <strong style="color: var(--color-primary); font-size: 0.85rem; display: block; margin-bottom: 4px;">Python ML Strategy</strong>
+        <div class="input-group" style="padding: 12px; background: rgba(56, 189, 248, 0.05); border: 1px dashed var(--color-primary); border-radius: 8px; display: flex; flex-direction: column; gap: 8px;">
+          <strong style="color: var(--color-primary); font-size: 0.85rem; display: block;">Python ML Strategy</strong>
           <span style="font-size: 0.75rem; color: var(--text-muted); line-height: 1.4; display: block;">
-            Queries your Python server at <code>http://localhost:5000/predict</code> using a RandomForest ML classifier. Make sure your Python Flask app is running!
+            Queries a RandomForest ML model. Enter your ML server endpoint below (local or hosted):
           </span>
+          <div class="input-group">
+            <input type="text" id="input-ml-url" placeholder="http://localhost:5000" style="font-size: 0.75rem; padding: 6px; background: rgba(0,0,0,0.2); border: 1px solid var(--border-light); border-radius: 4px; color: var(--text-main); width: 100%;" value="${localStorage.getItem('ml_url') || 'http://localhost:5000'}">
+          </div>
+          <button id="btn-train-ml" class="btn btn-primary" style="width: 100%; font-size: 0.8rem; padding: 6px 12px; border-radius: 4px; cursor: pointer;">Train ML Model</button>
         </div>
       `;
     }
@@ -814,6 +818,16 @@ export class Dashboard {
       });
     });
 
+    // Attach change listener to ML URL input box if it exists
+    const inputMlUrl = document.getElementById('input-ml-url') as HTMLInputElement;
+    if (inputMlUrl) {
+      inputMlUrl.addEventListener('change', () => {
+        const val = inputMlUrl.value.trim() || 'http://localhost:5000';
+        localStorage.setItem('ml_url', val);
+        this.triggerConfigChange();
+      });
+    }
+
     // Attach Train ML button click listener if it exists
     const btnTrain = document.getElementById('btn-train-ml');
     if (btnTrain) {
@@ -828,7 +842,8 @@ export class Dashboard {
           const cleanSym = sym.replace('/', '_');
           const filepath = `data/history/${cleanSym}_history.json`;
           
-          const res = await fetch('http://localhost:5000/train', {
+          const mlUrl = localStorage.getItem('ml_url') || 'http://localhost:5000';
+          const res = await fetch(`${mlUrl}/train`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json'
@@ -847,7 +862,7 @@ export class Dashboard {
           alert(`Success: Trained machine learning model for ${sym}!\nAccuracy: ${(data.training_accuracy * 100).toFixed(1)}%`);
           btnTrain.innerText = 'Train ML Model (Success!)';
         } catch (e: any) {
-          alert(`Training failed: ${e.message}\n\nMake sure you downloaded history first in your terminal:\nnode scripts/fetch_history.js ${this.activeSymbol} 365 <AlpacaKey> <AlpacaSecret>`);
+          alert(`Training failed: ${e.message}\n\nMake sure your ML server is running, or if testing locally, download history first in your terminal:\nnode scripts/fetch_history.js ${this.activeSymbol} 365 <AlpacaKey> <AlpacaSecret>`);
           btnTrain.innerText = 'Train ML Model (Failed)';
         } finally {
           btnTrain.removeAttribute('disabled');

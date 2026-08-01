@@ -3,10 +3,12 @@ import json
 import numpy as np
 import pandas as pd
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 from sklearn.ensemble import RandomForestClassifier
 import joblib
 
 app = Flask(__name__)
+CORS(app)
 
 # Directory to save trained model files
 MODEL_DIR = os.path.join(os.path.dirname(__file__), 'models')
