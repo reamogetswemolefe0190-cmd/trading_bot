@@ -42,17 +42,17 @@ async function proxyAlpaca(req, res, targetUrl) {
   }
 }
 
-app.all('/api/alpaca-paper/*', (req, res) => {
+app.all('/api/alpaca-paper/{*splat}', (req, res) => {
   const cleanPath = req.url.replace(/^\/api\/alpaca-paper/, '');
   proxyAlpaca(req, res, `https://paper-api.alpaca.markets${cleanPath}`);
 });
 
-app.all('/api/alpaca-live/*', (req, res) => {
+app.all('/api/alpaca-live/{*splat}', (req, res) => {
   const cleanPath = req.url.replace(/^\/api\/alpaca-live/, '');
   proxyAlpaca(req, res, `https://api.alpaca.markets${cleanPath}`);
 });
 
-app.all('/api/alpaca-data/*', (req, res) => {
+app.all('/api/alpaca-data/{*splat}', (req, res) => {
   const cleanPath = req.url.replace(/^\/api\/alpaca-data/, '');
   proxyAlpaca(req, res, `https://data.alpaca.markets${cleanPath}`);
 });
@@ -60,7 +60,7 @@ app.all('/api/alpaca-data/*', (req, res) => {
 // Serve frontend assets built in dist
 app.use(express.static(path.join(__dirname, 'dist')));
 
-app.get('*', (req, res) => {
+app.get('/{*splat}', (req, res) => {
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
